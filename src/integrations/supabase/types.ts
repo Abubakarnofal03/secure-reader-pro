@@ -80,6 +80,41 @@ export type Database = {
         }
         Relationships: []
       }
+      reading_progress: {
+        Row: {
+          content_id: string
+          current_page: number
+          id: string
+          total_pages: number | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          content_id: string
+          current_page?: number
+          id?: string
+          total_pages?: number | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          content_id?: string
+          current_page?: number
+          id?: string
+          total_pages?: number | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reading_progress_content_id_fkey"
+            columns: ["content_id"]
+            isOneToOne: false
+            referencedRelation: "content"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_content_access: {
         Row: {
           content_id: string
