@@ -7,7 +7,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Watermark } from '@/components/Watermark';
 import { LoadingScreen } from '@/components/LoadingScreen';
 import { getDeviceId } from '@/lib/device';
-import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
+
 
 // Set up PDF.js worker
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
