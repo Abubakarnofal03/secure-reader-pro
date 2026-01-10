@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, X, Loader2, AlertTriangle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, X, Loader2, AlertTriangle, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -9,7 +9,6 @@ import { LoadingScreen } from '@/components/LoadingScreen';
 import { SecurityWarning } from '@/components/SecurityWarning';
 import { getDeviceId } from '@/lib/device';
 import { useSecurityMonitor } from '@/hooks/useSecurityMonitor';
-
 
 // Set up PDF.js worker
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
@@ -25,11 +24,15 @@ interface ContentDetails {
   };
 }
 
+const ZOOM_LEVELS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3];
+const DEFAULT_ZOOM_INDEX = 2; // 100%
+
 export default function SecureReaderScreen() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { profile, signOut } = useAuth();
   const containerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   
   // Security monitoring for iOS screenshot/recording detection
   const { isRecording, screenshotDetected, clearScreenshotAlert } = useSecurityMonitor();
@@ -39,8 +42,12 @@ export default function SecureReaderScreen() {
   const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [pageWidth, setPageWidth] = useState(window.innerWidth - 32);
+  const [baseWidth, setBaseWidth] = useState(window.innerWidth - 32);
+  const [zoomIndex, setZoomIndex] = useState(DEFAULT_ZOOM_INDEX);
   const [sessionId] = useState(() => crypto.randomUUID().substring(0, 8));
+
+  const zoomLevel = ZOOM_LEVELS[zoomIndex];
+  const pageWidth = baseWidth * zoomLevel;
 
   // Prevent all copy/paste/context menu
   useEffect(() => {
@@ -83,15 +90,28 @@ export default function SecureReaderScreen() {
   useEffect(() => {
     const handleResize = () => {
       if (containerRef.current) {
-        setPageWidth(containerRef.current.clientWidth - 32);
+        setBaseWidth(containerRef.current.clientWidth - 32);
       } else {
-        setPageWidth(window.innerWidth - 32);
+        setBaseWidth(window.innerWidth - 32);
       }
     };
     
     handleResize();
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Zoom controls
+  const zoomIn = useCallback(() => {
+    setZoomIndex((prev) => Math.min(prev + 1, ZOOM_LEVELS.length - 1));
+  }, []);
+
+  const zoomOut = useCallback(() => {
+    setZoomIndex((prev) => Math.max(prev - 1, 0));
+  }, []);
+
+  const resetZoom = useCallback(() => {
+    setZoomIndex(DEFAULT_ZOOM_INDEX);
   }, []);
 
   // Fetch content via edge function
@@ -221,7 +241,33 @@ export default function SecureReaderScreen() {
               Page {currentPage} of {numPages || '...'}
             </p>
           </div>
-          <div className="w-9" />
+          
+          {/* Zoom Controls in Header */}
+          <div className="flex items-center gap-1">
+            <button
+              onClick={zoomOut}
+              disabled={zoomIndex <= 0}
+              className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-secondary disabled:opacity-30 transition-all"
+              title="Zoom out"
+            >
+              <ZoomOut className="h-4 w-4 text-foreground" />
+            </button>
+            <button
+              onClick={resetZoom}
+              className="px-2 py-1 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors min-w-[3rem]"
+              title="Reset zoom"
+            >
+              {Math.round(zoomLevel * 100)}%
+            </button>
+            <button
+              onClick={zoomIn}
+              disabled={zoomIndex >= ZOOM_LEVELS.length - 1}
+              className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-secondary disabled:opacity-30 transition-all"
+              title="Zoom in"
+            >
+              <ZoomIn className="h-4 w-4 text-foreground" />
+            </button>
+          </div>
         </div>
       </header>
 
@@ -230,12 +276,14 @@ export default function SecureReaderScreen() {
         {/* Enhanced Watermark */}
         <Watermark sessionId={sessionId} />
         
-        {/* PDF Content */}
+        {/* PDF Content - Scrollable container for zoomed content */}
         <div 
-          className="flex justify-center py-4 relative"
+          ref={contentRef}
+          className="flex justify-center py-4 relative min-h-full"
           style={{
             pointerEvents: 'auto',
-            touchAction: 'pan-y',
+            touchAction: 'pan-x pan-y pinch-zoom',
+            overflowX: zoomLevel > 1 ? 'auto' : 'hidden',
           }}
         >
           {pdfDataUri && (
