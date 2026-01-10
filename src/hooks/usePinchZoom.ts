@@ -3,6 +3,10 @@ import { useRef, useCallback, useEffect } from 'react';
 interface PinchZoomState {
   initialDistance: number;
   initialZoomIndex: number;
+  centerX: number;
+  centerY: number;
+  scrollLeft: number;
+  scrollTop: number;
 }
 
 interface UsePinchZoomOptions {
@@ -29,14 +33,36 @@ export function usePinchZoom({
     return Math.sqrt(dx * dx + dy * dy);
   }, []);
 
+  const getPinchCenter = useCallback((touches: TouchList): { x: number; y: number } => {
+    if (touches.length < 2) return { x: 0, y: 0 };
+    return {
+      x: (touches[0].clientX + touches[1].clientX) / 2,
+      y: (touches[0].clientY + touches[1].clientY) / 2,
+    };
+  }, []);
+
   const handleTouchStart = useCallback(
     (e: TouchEvent) => {
+      const container = containerRef.current;
+      if (!container) return;
+
+      // Get the scrollable parent (the <main> element)
+      const scrollParent = container.closest('main') || container.parentElement;
+
       // Handle pinch start (two fingers)
       if (e.touches.length === 2) {
         e.preventDefault();
+        const center = getPinchCenter(e.touches);
+        const rect = container.getBoundingClientRect();
+        
         pinchState.current = {
           initialDistance: getDistance(e.touches),
           initialZoomIndex: zoomIndex,
+          // Store center position relative to container
+          centerX: center.x - rect.left + (scrollParent?.scrollLeft || 0),
+          centerY: center.y - rect.top + (scrollParent?.scrollTop || 0),
+          scrollLeft: scrollParent?.scrollLeft || 0,
+          scrollTop: scrollParent?.scrollTop || 0,
         };
       }
 
@@ -55,15 +81,38 @@ export function usePinchZoom({
 
           if (timeDiff < 300 && distance < 50) {
             e.preventDefault();
+            
+            const rect = container.getBoundingClientRect();
+            const tapX = touch.clientX - rect.left + (scrollParent?.scrollLeft || 0);
+            const tapY = touch.clientY - rect.top + (scrollParent?.scrollTop || 0);
+            
             // Toggle between 100% (index 2) and 200% (index 6) or closest
             const zoomIndex100 = zoomLevels.findIndex((z) => z === 1);
             const zoomIndex200 = zoomLevels.findIndex((z) => z === 2);
             
+            const oldZoom = zoomLevels[zoomIndex];
+            let newZoomIndex: number;
+            
             if (zoomIndex <= zoomIndex100) {
-              onZoomChange(zoomIndex200 >= 0 ? zoomIndex200 : zoomLevels.length - 1);
+              newZoomIndex = zoomIndex200 >= 0 ? zoomIndex200 : zoomLevels.length - 1;
             } else {
-              onZoomChange(zoomIndex100 >= 0 ? zoomIndex100 : 0);
+              newZoomIndex = zoomIndex100 >= 0 ? zoomIndex100 : 0;
             }
+            
+            const newZoom = zoomLevels[newZoomIndex];
+            const scale = newZoom / oldZoom;
+            
+            onZoomChange(newZoomIndex);
+            
+            // Scroll to keep tap position centered after zoom
+            requestAnimationFrame(() => {
+              if (scrollParent) {
+                const newScrollX = tapX * scale - (touch.clientX - rect.left);
+                const newScrollY = tapY * scale - (touch.clientY - rect.top);
+                scrollParent.scrollLeft = Math.max(0, newScrollX);
+                scrollParent.scrollTop = Math.max(0, newScrollY);
+              }
+            });
             
             lastTapTime.current = 0;
             lastTapPosition.current = null;
@@ -75,11 +124,16 @@ export function usePinchZoom({
         lastTapPosition.current = tapPosition;
       }
     },
-    [getDistance, zoomIndex, zoomLevels, onZoomChange]
+    [getDistance, getPinchCenter, zoomIndex, zoomLevels, onZoomChange, containerRef]
   );
 
   const handleTouchMove = useCallback(
     (e: TouchEvent) => {
+      const container = containerRef.current;
+      if (!container) return;
+      
+      const scrollParent = container.closest('main') || container.parentElement;
+
       if (e.touches.length === 2 && pinchState.current) {
         e.preventDefault();
         
@@ -102,11 +156,32 @@ export function usePinchZoom({
         }
         
         if (closestIndex !== zoomIndex) {
+          const oldZoom = zoomLevels[zoomIndex];
+          const newZoom = zoomLevels[closestIndex];
+          const zoomScale = newZoom / oldZoom;
+          
           onZoomChange(closestIndex);
+          
+          // Adjust scroll position to keep pinch center in place
+          if (scrollParent && pinchState.current) {
+            const center = getPinchCenter(e.touches);
+            const rect = container.getBoundingClientRect();
+            
+            // Calculate where the pinch center should be after zoom
+            const newCenterX = pinchState.current.centerX * (newZoom / zoomLevels[pinchState.current.initialZoomIndex]);
+            const newCenterY = pinchState.current.centerY * (newZoom / zoomLevels[pinchState.current.initialZoomIndex]);
+            
+            // Scroll to keep the pinch center at the same screen position
+            const newScrollX = newCenterX - (center.x - rect.left);
+            const newScrollY = newCenterY - (center.y - rect.top);
+            
+            scrollParent.scrollLeft = Math.max(0, newScrollX);
+            scrollParent.scrollTop = Math.max(0, newScrollY);
+          }
         }
       }
     },
-    [getDistance, zoomLevels, zoomIndex, onZoomChange]
+    [getDistance, getPinchCenter, zoomLevels, zoomIndex, onZoomChange, containerRef]
   );
 
   const handleTouchEnd = useCallback((e: TouchEvent) => {
