@@ -6,7 +6,9 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Watermark } from '@/components/Watermark';
 import { LoadingScreen } from '@/components/LoadingScreen';
+import { SecurityWarning } from '@/components/SecurityWarning';
 import { getDeviceId } from '@/lib/device';
+import { useSecurityMonitor } from '@/hooks/useSecurityMonitor';
 
 
 // Set up PDF.js worker
@@ -28,6 +30,9 @@ export default function SecureReaderScreen() {
   const navigate = useNavigate();
   const { profile, signOut } = useAuth();
   const containerRef = useRef<HTMLDivElement>(null);
+  
+  // Security monitoring for iOS screenshot/recording detection
+  const { isRecording, screenshotDetected, clearScreenshotAlert } = useSecurityMonitor();
   
   const [content, setContent] = useState<ContentDetails | null>(null);
   const [numPages, setNumPages] = useState<number>(0);
@@ -193,6 +198,12 @@ export default function SecureReaderScreen() {
         userSelect: 'none',
       }}
     >
+      {/* Security Warning Overlay (iOS) */}
+      <SecurityWarning
+        isRecording={isRecording}
+        screenshotDetected={screenshotDetected}
+        onDismiss={clearScreenshotAlert}
+      />
       {/* Header */}
       <header className="sticky top-0 z-30 glass border-b border-border px-4 py-3">
         <div className="flex items-center justify-between">

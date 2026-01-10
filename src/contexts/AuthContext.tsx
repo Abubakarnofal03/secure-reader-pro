@@ -166,6 +166,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signOut = async () => {
+    // Clear device ID from profile before signing out
+    if (user) {
+      await supabase
+        .from('profiles')
+        .update({ active_device_id: null })
+        .eq('id', user.id);
+    }
+    
+    // Clear local device ID
+    localStorage.removeItem('device_id');
+    
     await supabase.auth.signOut();
     setUser(null);
     setSession(null);

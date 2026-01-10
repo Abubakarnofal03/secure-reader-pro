@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { BookOpen, ToggleLeft, ToggleRight, Trash2, Users, Loader2 } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { BookOpen, ToggleLeft, ToggleRight, Trash2, Users, Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
@@ -34,6 +34,9 @@ export function ContentList({ onManageAccess, refreshTrigger }: ContentListProps
   const [loading, setLoading] = useState(true);
   const [deleteContent, setDeleteContent] = useState<Content | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [replacing, setReplacing] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [replaceContentId, setReplaceContentId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchContents();
@@ -111,6 +114,68 @@ export function ContentList({ onManageAccess, refreshTrigger }: ContentListProps
     }
   };
 
+  const handleReplaceClick = (contentId: string) => {
+    setReplaceContentId(contentId);
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !replaceContentId) return;
+
+    const content = contents.find(c => c.id === replaceContentId);
+    if (!content) return;
+
+    if (file.type !== 'application/pdf') {
+      toast({ title: 'Error', description: 'Only PDF files are allowed', variant: 'destructive' });
+      return;
+    }
+
+    setReplacing(replaceContentId);
+    try {
+      // Generate new file path
+      const fileExt = file.name.split('.').pop();
+      const newFilePath = `${crypto.randomUUID()}.${fileExt}`;
+
+      // Upload new file
+      const { error: uploadError } = await supabase.storage
+        .from('content-files')
+        .upload(newFilePath, file, { contentType: file.type });
+
+      if (uploadError) throw uploadError;
+
+      // Update content record with new file path
+      const { error: updateError } = await supabase
+        .from('content')
+        .update({ file_path: newFilePath })
+        .eq('id', replaceContentId);
+
+      if (updateError) throw updateError;
+
+      // Delete old file from storage (non-blocking)
+      supabase.storage
+        .from('content-files')
+        .remove([content.file_path])
+        .then(({ error }) => {
+          if (error) console.warn('Old file cleanup warning:', error);
+        });
+
+      toast({ title: 'Success', description: 'File replaced successfully' });
+      fetchContents();
+    } catch (error) {
+      console.error('Replace error:', error);
+      toast({
+        title: 'Replace Failed',
+        description: error instanceof Error ? error.message : 'An error occurred',
+        variant: 'destructive',
+      });
+    } finally {
+      setReplacing(null);
+      setReplaceContentId(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
   if (loading) {
     return (
       <div className="space-y-3">
@@ -133,6 +198,15 @@ export function ContentList({ onManageAccess, refreshTrigger }: ContentListProps
 
   return (
     <>
+      {/* Hidden file input for replace functionality */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileChange}
+        accept="application/pdf"
+        className="hidden"
+      />
+      
       <div className="space-y-3">
         {contents.map((content) => (
           <div
@@ -173,6 +247,19 @@ export function ContentList({ onManageAccess, refreshTrigger }: ContentListProps
                 title="Manage user access"
               >
                 <Users className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => handleReplaceClick(content.id)}
+                disabled={replacing === content.id}
+                title="Replace file"
+              >
+                {replacing === content.id ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4" />
+                )}
               </Button>
               <Button
                 variant="ghost"
