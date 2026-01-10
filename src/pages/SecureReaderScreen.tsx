@@ -7,8 +7,13 @@ import { supabase } from '@/integrations/supabase/client';
 import { Watermark } from '@/components/Watermark';
 import { LoadingScreen } from '@/components/LoadingScreen';
 import { SecurityWarning } from '@/components/SecurityWarning';
+import { PageSlider } from '@/components/reader/PageSlider';
+import { GoToPageDialog } from '@/components/reader/GoToPageDialog';
+import { ResumeReadingToast } from '@/components/reader/ResumeReadingToast';
 import { getDeviceId } from '@/lib/device';
 import { useSecurityMonitor } from '@/hooks/useSecurityMonitor';
+import { usePinchZoom } from '@/hooks/usePinchZoom';
+import { useReadingProgress } from '@/hooks/useReadingProgress';
 
 // Set up PDF.js worker
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
@@ -26,6 +31,7 @@ interface ContentDetails {
 
 const ZOOM_LEVELS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3];
 const DEFAULT_ZOOM_INDEX = 2; // 100%
+const MAX_RECENT_PAGES = 5;
 
 export default function SecureReaderScreen() {
   const { id } = useParams<{ id: string }>();
@@ -45,9 +51,68 @@ export default function SecureReaderScreen() {
   const [baseWidth, setBaseWidth] = useState(window.innerWidth - 32);
   const [zoomIndex, setZoomIndex] = useState(DEFAULT_ZOOM_INDEX);
   const [sessionId] = useState(() => crypto.randomUUID().substring(0, 8));
+  const [showGoToDialog, setShowGoToDialog] = useState(false);
+  const [recentPages, setRecentPages] = useState<number[]>([]);
+  const [hasInitializedPage, setHasInitializedPage] = useState(false);
 
   const zoomLevel = ZOOM_LEVELS[zoomIndex];
   const pageWidth = baseWidth * zoomLevel;
+
+  // Reading progress hook
+  const {
+    savedProgress,
+    isLoading: isProgressLoading,
+    showResumePrompt,
+    dismissResumePrompt,
+    saveProgress,
+    saveProgressImmediate,
+    initialPage,
+  } = useReadingProgress({
+    contentId: id,
+    totalPages: numPages,
+  });
+
+  // Pinch-to-zoom hook
+  usePinchZoom({
+    zoomLevels: ZOOM_LEVELS,
+    zoomIndex,
+    onZoomChange: setZoomIndex,
+    containerRef: contentRef as React.RefObject<HTMLElement>,
+  });
+
+  // Initialize to saved page after progress is loaded
+  useEffect(() => {
+    if (!isProgressLoading && savedProgress && !hasInitializedPage && numPages > 0) {
+      // Don't auto-navigate, let user decide via resume prompt
+      setHasInitializedPage(true);
+    }
+  }, [isProgressLoading, savedProgress, hasInitializedPage, numPages]);
+
+  // Track recent pages
+  useEffect(() => {
+    if (currentPage > 0 && hasInitializedPage) {
+      setRecentPages((prev) => {
+        const filtered = prev.filter((p) => p !== currentPage);
+        return [currentPage, ...filtered].slice(0, MAX_RECENT_PAGES);
+      });
+    }
+  }, [currentPage, hasInitializedPage]);
+
+  // Save progress when page changes
+  useEffect(() => {
+    if (currentPage > 0 && numPages > 0 && hasInitializedPage) {
+      saveProgress(currentPage);
+    }
+  }, [currentPage, numPages, saveProgress, hasInitializedPage]);
+
+  // Save progress on unmount
+  useEffect(() => {
+    return () => {
+      if (currentPage > 0 && numPages > 0) {
+        saveProgressImmediate(currentPage);
+      }
+    };
+  }, [currentPage, numPages, saveProgressImmediate]);
 
   // Prevent all copy/paste/context menu
   useEffect(() => {
@@ -175,17 +240,34 @@ export default function SecureReaderScreen() {
 
   const onDocumentLoadSuccess = useCallback(({ numPages }: { numPages: number }) => {
     setNumPages(numPages);
+    setHasInitializedPage(true);
   }, []);
 
-  const goToPage = (page: number) => {
+  const goToPage = useCallback((page: number) => {
     if (page >= 1 && page <= numPages) {
       setCurrentPage(page);
     }
-  };
+  }, [numPages]);
 
-  const handleClose = () => {
+  const handleResume = useCallback(() => {
+    if (savedProgress) {
+      setCurrentPage(savedProgress.currentPage);
+    }
+    dismissResumePrompt();
+  }, [savedProgress, dismissResumePrompt]);
+
+  const handleStartOver = useCallback(() => {
+    setCurrentPage(1);
+    dismissResumePrompt();
+  }, [dismissResumePrompt]);
+
+  const handleClose = useCallback(() => {
+    // Save progress before closing
+    if (currentPage > 0 && numPages > 0) {
+      saveProgressImmediate(currentPage);
+    }
     navigate('/library', { replace: true });
-  };
+  }, [currentPage, numPages, saveProgressImmediate, navigate]);
 
   if (loading) {
     return <LoadingScreen />;
@@ -224,6 +306,27 @@ export default function SecureReaderScreen() {
         screenshotDetected={screenshotDetected}
         onDismiss={clearScreenshotAlert}
       />
+
+      {/* Resume Reading Toast */}
+      <ResumeReadingToast
+        show={showResumePrompt && numPages > 0}
+        savedPage={savedProgress?.currentPage ?? 1}
+        totalPages={numPages}
+        onResume={handleResume}
+        onStartOver={handleStartOver}
+        onDismiss={dismissResumePrompt}
+      />
+
+      {/* Go to Page Dialog */}
+      <GoToPageDialog
+        open={showGoToDialog}
+        onOpenChange={setShowGoToDialog}
+        currentPage={currentPage}
+        totalPages={numPages}
+        onPageChange={goToPage}
+        recentPages={recentPages}
+      />
+
       {/* Header */}
       <header className="sticky top-0 z-30 glass border-b border-border px-4 py-3">
         <div className="flex items-center justify-between">
@@ -237,9 +340,12 @@ export default function SecureReaderScreen() {
             <h1 className="line-clamp-1 text-sm font-medium text-foreground">
               {content?.title}
             </h1>
-            <p className="text-xs text-muted-foreground">
-              Page {currentPage} of {numPages || '...'}
-            </p>
+            <button
+              onClick={() => setShowGoToDialog(true)}
+              className="text-xs text-muted-foreground hover:text-primary transition-colors"
+            >
+              Page {currentPage} of {numPages || '...'} • Tap to jump
+            </button>
           </div>
           
           {/* Zoom Controls in Header */}
@@ -320,30 +426,22 @@ export default function SecureReaderScreen() {
           <button
             onClick={() => goToPage(currentPage - 1)}
             disabled={currentPage <= 1}
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-secondary disabled:opacity-30 transition-opacity"
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-secondary disabled:opacity-30 transition-opacity flex-shrink-0"
           >
             <ChevronLeft className="h-5 w-5 text-secondary-foreground" />
           </button>
 
-          <div className="flex items-center gap-2">
-            <input
-              type="number"
-              value={currentPage}
-              onChange={(e) => {
-                const page = parseInt(e.target.value, 10);
-                if (!isNaN(page)) goToPage(page);
-              }}
-              className="w-14 rounded-lg bg-secondary px-2 py-1.5 text-center text-sm font-medium text-secondary-foreground border-0 focus:ring-2 focus:ring-primary"
-              min={1}
-              max={numPages}
-            />
-            <span className="text-sm text-muted-foreground">/ {numPages}</span>
-          </div>
+          {/* Page Slider */}
+          <PageSlider
+            currentPage={currentPage}
+            totalPages={numPages}
+            onPageChange={goToPage}
+          />
 
           <button
             onClick={() => goToPage(currentPage + 1)}
             disabled={currentPage >= numPages}
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-secondary disabled:opacity-30 transition-opacity"
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-secondary disabled:opacity-30 transition-opacity flex-shrink-0"
           >
             <ChevronRight className="h-5 w-5 text-secondary-foreground" />
           </button>
