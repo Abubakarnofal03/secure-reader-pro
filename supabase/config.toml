@@ -1,1 +1,4 @@
 project_id = "ssgiyfgbzbivukxtcnjq"
+
+[functions.render-pdf-page]
+verify_jwt = false
