@@ -14,6 +14,7 @@ import { getDeviceId } from '@/lib/device';
 import { useSecurityMonitor } from '@/hooks/useSecurityMonitor';
 import { usePinchZoom } from '@/hooks/usePinchZoom';
 import { useReadingProgress } from '@/hooks/useReadingProgress';
+import { usePrivacyScreen } from '@/hooks/usePrivacyScreen';
 
 // Set up PDF.js worker
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
@@ -42,6 +43,9 @@ export default function SecureReaderScreen() {
   
   // Security monitoring for iOS screenshot/recording detection
   const { isRecording, screenshotDetected, clearScreenshotAlert } = useSecurityMonitor();
+  
+  // Enable native privacy screen protection (Android FLAG_SECURE, iOS blur)
+  usePrivacyScreen(true);
   
   const [content, setContent] = useState<ContentDetails | null>(null);
   const [numPages, setNumPages] = useState<number>(0);
