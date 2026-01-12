@@ -44,8 +44,8 @@ export default function SecureReaderScreen() {
   // Security monitoring for iOS screenshot/recording detection
   const { isRecording, screenshotDetected, clearScreenshotAlert } = useSecurityMonitor();
   
-  // Enable native privacy screen protection (Android FLAG_SECURE, iOS blur)
-  usePrivacyScreen(true);
+  // Privacy screen protection - TEMPORARILY DISABLED for testing
+  usePrivacyScreen(false);
   
   const [content, setContent] = useState<ContentDetails | null>(null);
   const [numPages, setNumPages] = useState<number>(0);
