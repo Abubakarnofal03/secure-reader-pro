@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { Progress } from '@/components/ui/progress';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
@@ -15,6 +16,7 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -25,6 +27,13 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
       if (file.type !== 'application/pdf') {
         toast({ title: 'Error', description: 'Only PDF files are allowed', variant: 'destructive' });
         return;
+      }
+      // Warn for very large files but don't prevent
+      if (file.size > 100 * 1024 * 1024) { // 100MB
+        toast({ 
+          title: 'Large File', 
+          description: 'This is a large file. Upload may take a while.', 
+        });
       }
       setSelectedFile(file);
       if (!title) {
@@ -40,25 +49,71 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
     }
 
     setUploading(true);
+    setUploadProgress(0);
+    
     try {
       // Generate unique file path
       const timestamp = Date.now();
       const fileName = `${timestamp}-${selectedFile.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
       const filePath = `content/${fileName}`;
 
-      // Upload to Supabase Storage
-      const { error: uploadError } = await supabase.storage
-        .from('content-files')
-        .upload(filePath, selectedFile, {
-          cacheControl: '3600',
-          upsert: false,
-        });
+      // For large files, we'll use chunked upload simulation with progress
+      const totalSize = selectedFile.size;
+      const chunkSize = 1024 * 1024; // 1MB chunks for progress tracking
+      let uploadedBytes = 0;
 
-      if (uploadError) {
-        throw new Error(`Upload failed: ${uploadError.message}`);
+      // Create a custom upload with progress tracking using XMLHttpRequest
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error('Not authenticated');
       }
 
+      const formData = new FormData();
+      formData.append('', selectedFile);
+
+      const xhr = new XMLHttpRequest();
+      
+      const uploadPromise = new Promise<void>((resolve, reject) => {
+        xhr.upload.addEventListener('progress', (event) => {
+          if (event.lengthComputable) {
+            const progress = Math.round((event.loaded / event.total) * 100);
+            setUploadProgress(progress);
+          }
+        });
+
+        xhr.addEventListener('load', () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve();
+          } else {
+            try {
+              const response = JSON.parse(xhr.responseText);
+              reject(new Error(response.message || response.error || 'Upload failed'));
+            } catch {
+              reject(new Error(`Upload failed with status ${xhr.status}`));
+            }
+          }
+        });
+
+        xhr.addEventListener('error', () => {
+          reject(new Error('Network error during upload'));
+        });
+
+        xhr.addEventListener('abort', () => {
+          reject(new Error('Upload cancelled'));
+        });
+      });
+
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      xhr.open('POST', `${supabaseUrl}/storage/v1/object/content-files/${filePath}`);
+      xhr.setRequestHeader('Authorization', `Bearer ${session.access_token}`);
+      xhr.setRequestHeader('x-upsert', 'false');
+      xhr.send(selectedFile);
+
+      await uploadPromise;
+
       // Create content record
+      setUploadProgress(100);
+      
       const { error: insertError } = await supabase
         .from('content')
         .insert({
@@ -80,6 +135,7 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
       setSelectedFile(null);
       setTitle('');
       setDescription('');
+      setUploadProgress(0);
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
@@ -94,6 +150,7 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
       });
     } finally {
       setUploading(false);
+      setUploadProgress(0);
     }
   };
 
@@ -125,7 +182,7 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
                     ({(selectedFile.size / 1024 / 1024).toFixed(2)} MB)
                   </span>
                 </div>
-                <Button variant="ghost" size="sm" onClick={clearSelection}>
+                <Button variant="ghost" size="sm" onClick={clearSelection} disabled={uploading}>
                   <X className="h-4 w-4" />
                 </Button>
               </div>
@@ -157,6 +214,7 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
             onChange={(e) => setTitle(e.target.value)}
             placeholder="Enter content title"
             className="mt-1.5"
+            disabled={uploading}
           />
         </div>
 
@@ -170,8 +228,20 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
             placeholder="Enter a description"
             rows={2}
             className="mt-1.5"
+            disabled={uploading}
           />
         </div>
+
+        {/* Upload Progress */}
+        {uploading && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">Uploading...</span>
+              <span className="font-medium">{uploadProgress}%</span>
+            </div>
+            <Progress value={uploadProgress} className="h-2" />
+          </div>
+        )}
 
         {/* Upload Button */}
         <Button
@@ -182,7 +252,7 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
           {uploading ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Uploading...
+              Uploading... {uploadProgress}%
             </>
           ) : (
             <>

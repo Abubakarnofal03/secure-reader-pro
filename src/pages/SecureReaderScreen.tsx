@@ -10,6 +10,7 @@ import { SecurityWarning } from '@/components/SecurityWarning';
 import { PageSlider } from '@/components/reader/PageSlider';
 import { GoToPageDialog } from '@/components/reader/GoToPageDialog';
 import { ResumeReadingToast } from '@/components/reader/ResumeReadingToast';
+import { Progress } from '@/components/ui/progress';
 import { getDeviceId } from '@/lib/device';
 import { useSecurityMonitor } from '@/hooks/useSecurityMonitor';
 import { usePinchZoom } from '@/hooks/usePinchZoom';
@@ -30,8 +31,6 @@ interface ContentDetails {
   };
 }
 
-const ZOOM_LEVELS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3];
-const DEFAULT_ZOOM_INDEX = 2; // 100%
 const MAX_RECENT_PAGES = 5;
 
 export default function SecureReaderScreen() {
@@ -40,6 +39,7 @@ export default function SecureReaderScreen() {
   const { profile, signOut } = useAuth();
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  const pdfWrapperRef = useRef<HTMLDivElement>(null);
   
   // Security monitoring for iOS screenshot/recording detection
   const { isRecording, screenshotDetected, clearScreenshotAlert } = useSecurityMonitor();
@@ -51,16 +51,13 @@ export default function SecureReaderScreen() {
   const [numPages, setNumPages] = useState<number>(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [loadingProgress, setLoadingProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [baseWidth, setBaseWidth] = useState(window.innerWidth - 32);
-  const [zoomIndex, setZoomIndex] = useState(DEFAULT_ZOOM_INDEX);
   const [sessionId] = useState(() => crypto.randomUUID().substring(0, 8));
   const [showGoToDialog, setShowGoToDialog] = useState(false);
   const [recentPages, setRecentPages] = useState<number[]>([]);
   const [hasInitializedPage, setHasInitializedPage] = useState(false);
-
-  const zoomLevel = ZOOM_LEVELS[zoomIndex];
-  const pageWidth = baseWidth * zoomLevel;
 
   // Reading progress hook
   const {
@@ -70,19 +67,20 @@ export default function SecureReaderScreen() {
     dismissResumePrompt,
     saveProgress,
     saveProgressImmediate,
-    initialPage,
   } = useReadingProgress({
     contentId: id,
     totalPages: numPages,
   });
 
-  // Pinch-to-zoom hook
-  usePinchZoom({
-    zoomLevels: ZOOM_LEVELS,
-    zoomIndex,
-    onZoomChange: setZoomIndex,
+  // Pinch-to-zoom hook - returns transform state and controls
+  const { transform, zoomIn, zoomOut, resetZoom, scale } = usePinchZoom({
+    minScale: 0.5,
+    maxScale: 4,
     containerRef: contentRef as React.RefObject<HTMLElement>,
+    contentRef: pdfWrapperRef as React.RefObject<HTMLElement>,
   });
+
+  const pageWidth = baseWidth;
 
   // Initialize to saved page after progress is loaded
   useEffect(() => {
@@ -170,19 +168,6 @@ export default function SecureReaderScreen() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Zoom controls
-  const zoomIn = useCallback(() => {
-    setZoomIndex((prev) => Math.min(prev + 1, ZOOM_LEVELS.length - 1));
-  }, []);
-
-  const zoomOut = useCallback(() => {
-    setZoomIndex((prev) => Math.max(prev - 1, 0));
-  }, []);
-
-  const resetZoom = useCallback(() => {
-    setZoomIndex(DEFAULT_ZOOM_INDEX);
-  }, []);
-
   // Fetch content via edge function
   useEffect(() => {
     const fetchSecureContent = async () => {
@@ -193,6 +178,7 @@ export default function SecureReaderScreen() {
       }
 
       try {
+        setLoadingProgress(10);
         const deviceId = await getDeviceId();
         const { data: { session } } = await supabase.auth.getSession();
         
@@ -202,6 +188,8 @@ export default function SecureReaderScreen() {
           return;
         }
 
+        setLoadingProgress(30);
+
         const response = await supabase.functions.invoke('render-pdf-page', {
           body: {
             content_id: id,
@@ -209,6 +197,8 @@ export default function SecureReaderScreen() {
             device_id: deviceId,
           },
         });
+
+        setLoadingProgress(70);
 
         if (response.error) {
           throw new Error(response.error.message);
@@ -226,11 +216,15 @@ export default function SecureReaderScreen() {
           throw new Error(data.error);
         }
 
+        setLoadingProgress(90);
+
         setContent({
           title: data.title,
           pdfBase64: data.pdfBase64,
           watermark: data.watermark,
         });
+
+        setLoadingProgress(100);
       } catch (err) {
         console.error('Error fetching content:', err);
         setError(err instanceof Error ? err.message : 'Failed to load content');
@@ -274,7 +268,16 @@ export default function SecureReaderScreen() {
   }, [currentPage, numPages, saveProgressImmediate, navigate]);
 
   if (loading) {
-    return <LoadingScreen />;
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-background px-6 safe-top safe-bottom">
+        <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
+        <p className="text-muted-foreground mb-4">Loading document...</p>
+        <div className="w-48">
+          <Progress value={loadingProgress} className="h-2" />
+        </div>
+        <p className="text-xs text-muted-foreground mt-2">{loadingProgress}%</p>
+      </div>
+    );
   }
 
   if (error) {
@@ -356,7 +359,7 @@ export default function SecureReaderScreen() {
           <div className="flex items-center gap-1">
             <button
               onClick={zoomOut}
-              disabled={zoomIndex <= 0}
+              disabled={scale <= 0.5}
               className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-secondary disabled:opacity-30 transition-all"
               title="Zoom out"
             >
@@ -367,11 +370,11 @@ export default function SecureReaderScreen() {
               className="px-2 py-1 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors min-w-[3rem]"
               title="Reset zoom"
             >
-              {Math.round(zoomLevel * 100)}%
+              {Math.round(scale * 100)}%
             </button>
             <button
               onClick={zoomIn}
-              disabled={zoomIndex >= ZOOM_LEVELS.length - 1}
+              disabled={scale >= 4}
               className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-secondary disabled:opacity-30 transition-all"
               title="Zoom in"
             >
@@ -386,41 +389,51 @@ export default function SecureReaderScreen() {
         {/* Enhanced Watermark */}
         <Watermark sessionId={sessionId} />
         
-        {/* PDF Content - Scrollable container for zoomed content */}
+        {/* PDF Content - Container for pinch zoom */}
         <div 
           ref={contentRef}
-          className="flex justify-center py-4 relative min-h-full"
+          className="flex justify-center py-4 relative min-h-full overflow-auto"
           style={{
             pointerEvents: 'auto',
-            touchAction: 'pan-x pan-y pinch-zoom',
-            overflowX: zoomLevel > 1 ? 'auto' : 'hidden',
+            touchAction: 'none', // Let our pinch zoom handler take over
           }}
         >
-          {pdfDataUri && (
-            <Document
-              file={pdfDataUri}
-              onLoadSuccess={onDocumentLoadSuccess}
-              loading={
-                <div className="flex items-center justify-center py-20">
-                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                </div>
-              }
-              error={
-                <div className="flex flex-col items-center justify-center py-20">
-                  <AlertTriangle className="h-8 w-8 text-destructive mb-2" />
-                  <p className="text-muted-foreground">Failed to load document</p>
-                </div>
-              }
-            >
-              <Page
-                pageNumber={currentPage}
-                width={pageWidth}
-                renderTextLayer={false}
-                renderAnnotationLayer={false}
-                className="shadow-lg rounded-sm"
-              />
-            </Document>
-          )}
+          <div
+            ref={pdfWrapperRef}
+            style={{
+              transform: `translate(${transform.translateX}px, ${transform.translateY}px) scale(${transform.scale})`,
+              transformOrigin: 'center center',
+              transition: 'none',
+            }}
+          >
+            {pdfDataUri && (
+              <Document
+                file={pdfDataUri}
+                onLoadSuccess={onDocumentLoadSuccess}
+                loading={
+                  <div className="flex flex-col items-center justify-center py-20">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary mb-2" />
+                    <p className="text-sm text-muted-foreground">Loading PDF...</p>
+                  </div>
+                }
+                error={
+                  <div className="flex flex-col items-center justify-center py-20">
+                    <AlertTriangle className="h-8 w-8 text-destructive mb-2" />
+                    <p className="text-muted-foreground">Failed to load document</p>
+                    <p className="text-xs text-muted-foreground mt-1">The file may be too large or corrupted</p>
+                  </div>
+                }
+              >
+                <Page
+                  pageNumber={currentPage}
+                  width={pageWidth}
+                  renderTextLayer={false}
+                  renderAnnotationLayer={false}
+                  className="shadow-lg rounded-sm"
+                />
+              </Document>
+            )}
+          </div>
         </div>
       </main>
 
