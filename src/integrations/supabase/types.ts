@@ -14,6 +14,27 @@ export type Database = {
   }
   public: {
     Tables: {
+      admin_settings: {
+        Row: {
+          id: string
+          key: string
+          updated_at: string | null
+          value: string
+        }
+        Insert: {
+          id?: string
+          key: string
+          updated_at?: string | null
+          value: string
+        }
+        Update: {
+          id?: string
+          key?: string
+          updated_at?: string | null
+          value?: string
+        }
+        Relationships: []
+      }
       content: {
         Row: {
           created_at: string
@@ -21,6 +42,7 @@ export type Database = {
           file_path: string
           id: string
           is_active: boolean
+          price: number
           title: string
           updated_at: string
         }
@@ -30,6 +52,7 @@ export type Database = {
           file_path: string
           id?: string
           is_active?: boolean
+          price?: number
           title: string
           updated_at?: string
         }
@@ -39,6 +62,7 @@ export type Database = {
           file_path?: string
           id?: string
           is_active?: boolean
+          price?: number
           title?: string
           updated_at?: string
         }
@@ -49,6 +73,7 @@ export type Database = {
           active_device_id: string | null
           created_at: string
           email: string
+          fcm_token: string | null
           has_access: boolean
           id: string
           last_login_at: string | null
@@ -60,6 +85,7 @@ export type Database = {
           active_device_id?: string | null
           created_at?: string
           email: string
+          fcm_token?: string | null
           has_access?: boolean
           id: string
           last_login_at?: string | null
@@ -71,6 +97,7 @@ export type Database = {
           active_device_id?: string | null
           created_at?: string
           email?: string
+          fcm_token?: string | null
           has_access?: boolean
           id?: string
           last_login_at?: string | null
@@ -79,6 +106,64 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      purchase_requests: {
+        Row: {
+          content_id: string
+          created_at: string | null
+          id: string
+          payment_proof_path: string
+          rejection_reason: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          status: string
+          user_id: string
+        }
+        Insert: {
+          content_id: string
+          created_at?: string | null
+          id?: string
+          payment_proof_path: string
+          rejection_reason?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          user_id: string
+        }
+        Update: {
+          content_id?: string
+          created_at?: string | null
+          id?: string
+          payment_proof_path?: string
+          rejection_reason?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "purchase_requests_content_id_fkey"
+            columns: ["content_id"]
+            isOneToOne: false
+            referencedRelation: "content"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_requests_reviewed_by_fkey"
+            columns: ["reviewed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_requests_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       reading_progress: {
         Row: {

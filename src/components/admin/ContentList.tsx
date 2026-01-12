@@ -21,6 +21,7 @@ interface Content {
   file_path: string;
   is_active: boolean;
   created_at: string;
+  price: number;
 }
 
 interface ContentListProps {
@@ -223,7 +224,10 @@ export function ContentList({ onManageAccess, refreshTrigger }: ContentListProps
                   {content.description}
                 </p>
               )}
-              <div className="mt-1 flex items-center gap-2">
+              <div className="mt-1 flex items-center gap-2 flex-wrap">
+                <span className="inline-flex items-center rounded-full bg-primary/10 text-primary px-2 py-0.5 text-xs font-medium">
+                  ₹{content.price}
+                </span>
                 <span
                   className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
                     content.is_active

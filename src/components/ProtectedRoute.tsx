@@ -33,10 +33,8 @@ export function ProtectedRoute({
     return <Navigate to="/" replace />;
   }
 
-  // Regular user access check
-  if (requireAccess && !requireAdmin && profile.role !== 'admin' && !profile.has_access) {
-    return <Navigate to="/access-pending" replace />;
-  }
+  // Regular users can now access the library without global access check
+  // Access is controlled per-book via purchase system
 
   return <>{children}</>;
 }
