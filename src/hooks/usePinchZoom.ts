@@ -1,5 +1,17 @@
 import { useRef, useCallback, useEffect, useState } from 'react';
-import { Capacitor } from '@capacitor/core';
+
+// Safe check for Capacitor - avoids crashes when not available
+const isNativePlatform = (): boolean => {
+  try {
+    // Dynamic import check for Capacitor
+    if (typeof window !== 'undefined' && (window as any).Capacitor) {
+      return (window as any).Capacitor.isNativePlatform?.() ?? false;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+};
 
 interface UsePinchZoomOptions {
   minScale?: number;
@@ -27,7 +39,7 @@ export function usePinchZoom({
   });
 
   // Track if we're on a native platform
-  const isNative = Capacitor.isNativePlatform();
+  const isNative = isNativePlatform();
 
   // Gesture state refs
   const initialPinch = useRef<{
