@@ -1,4 +1,5 @@
 import { useRef, useCallback, useEffect, useState } from 'react';
+import { Capacitor } from '@capacitor/core';
 
 interface UsePinchZoomOptions {
   minScale?: number;
@@ -25,6 +26,10 @@ export function usePinchZoom({
     translateY: 0,
   });
 
+  // Track if we're on a native platform
+  const isNative = Capacitor.isNativePlatform();
+
+  // Gesture state refs
   const initialPinch = useRef<{
     distance: number;
     scale: number;
@@ -34,9 +39,17 @@ export function usePinchZoom({
     translateY: number;
   } | null>(null);
 
+  const panStart = useRef<{
+    x: number;
+    y: number;
+    translateX: number;
+    translateY: number;
+  } | null>(null);
+
   const lastTapTime = useRef<number>(0);
   const lastTapPosition = useRef<{ x: number; y: number } | null>(null);
   const isPinching = useRef(false);
+  const isPanning = useRef(false);
 
   const getDistance = useCallback((touches: TouchList): number => {
     if (touches.length < 2) return 0;
@@ -53,20 +66,28 @@ export function usePinchZoom({
     };
   }, []);
 
-  const clampTransform = useCallback((newTransform: TransformState, containerRect: DOMRect, contentRect: DOMRect): TransformState => {
+  const clampTransform = useCallback((
+    newTransform: TransformState, 
+    containerRect: DOMRect, 
+    contentRect: DOMRect
+  ): TransformState => {
     const { scale, translateX, translateY } = newTransform;
     
-    const scaledWidth = contentRect.width * scale;
-    const scaledHeight = contentRect.height * scale;
+    // Use the original content dimensions before any transform
+    const originalWidth = contentRect.width / transform.scale;
+    const originalHeight = contentRect.height / transform.scale;
+    
+    const scaledWidth = originalWidth * scale;
+    const scaledHeight = originalHeight * scale;
     
     let clampedX = translateX;
     let clampedY = translateY;
     
-    // If content is smaller than container, center it
+    // If content is smaller than or equal to container, center it
     if (scaledWidth <= containerRect.width) {
       clampedX = 0;
     } else {
-      // Limit panning so content doesn't go out of bounds
+      // Allow panning within the scaled content bounds
       const maxX = (scaledWidth - containerRect.width) / 2;
       clampedX = Math.max(-maxX, Math.min(maxX, translateX));
     }
@@ -79,19 +100,42 @@ export function usePinchZoom({
     }
     
     return { scale, translateX: clampedX, translateY: clampedY };
-  }, []);
+  }, [transform.scale]);
 
   const handleTouchStart = useCallback((e: TouchEvent) => {
     const container = containerRef.current;
     const content = contentRef.current;
     if (!container || !content) return;
 
-    // Double tap to toggle zoom
+    // Pinch start (two fingers)
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      e.stopPropagation();
+      isPinching.current = true;
+      isPanning.current = false;
+      panStart.current = null;
+      
+      const center = getCenter(e.touches);
+      const containerRect = container.getBoundingClientRect();
+      
+      initialPinch.current = {
+        distance: getDistance(e.touches),
+        scale: transform.scale,
+        centerX: center.x - containerRect.left - containerRect.width / 2,
+        centerY: center.y - containerRect.top - containerRect.height / 2,
+        translateX: transform.translateX,
+        translateY: transform.translateY,
+      };
+      return;
+    }
+
+    // Single finger - check for double tap or start panning
     if (e.touches.length === 1) {
       const now = Date.now();
       const touch = e.touches[0];
       const tapPosition = { x: touch.clientX, y: touch.clientY };
 
+      // Check for double tap
       if (lastTapPosition.current) {
         const timeDiff = now - lastTapTime.current;
         const dx = Math.abs(tapPosition.x - lastTapPosition.current.x);
@@ -100,6 +144,7 @@ export function usePinchZoom({
 
         if (timeDiff < 300 && distance < 50) {
           e.preventDefault();
+          e.stopPropagation();
           
           const containerRect = container.getBoundingClientRect();
           const contentRect = content.getBoundingClientRect();
@@ -108,8 +153,8 @@ export function usePinchZoom({
             // Zoom out to 1
             setTransform({ scale: 1, translateX: 0, translateY: 0 });
           } else {
-            // Zoom in to 2x centered on tap point
-            const newScale = 2;
+            // Zoom in to 2.5x centered on tap point
+            const newScale = 2.5;
             const tapX = touch.clientX - containerRect.left - containerRect.width / 2;
             const tapY = touch.clientY - containerRect.top - containerRect.height / 2;
             
@@ -133,24 +178,17 @@ export function usePinchZoom({
 
       lastTapTime.current = now;
       lastTapPosition.current = tapPosition;
-    }
 
-    // Pinch start
-    if (e.touches.length === 2) {
-      e.preventDefault();
-      isPinching.current = true;
-      
-      const center = getCenter(e.touches);
-      const containerRect = container.getBoundingClientRect();
-      
-      initialPinch.current = {
-        distance: getDistance(e.touches),
-        scale: transform.scale,
-        centerX: center.x - containerRect.left - containerRect.width / 2,
-        centerY: center.y - containerRect.top - containerRect.height / 2,
-        translateX: transform.translateX,
-        translateY: transform.translateY,
-      };
+      // Start panning if zoomed in
+      if (transform.scale > 1) {
+        isPanning.current = true;
+        panStart.current = {
+          x: touch.clientX,
+          y: touch.clientY,
+          translateX: transform.translateX,
+          translateY: transform.translateY,
+        };
+      }
     }
   }, [containerRef, contentRef, transform, getDistance, getCenter, clampTransform]);
 
@@ -159,9 +197,10 @@ export function usePinchZoom({
     const content = contentRef.current;
     if (!container || !content) return;
 
-    // Pinch zoom
+    // Handle pinch zoom
     if (e.touches.length === 2 && initialPinch.current) {
       e.preventDefault();
+      e.stopPropagation();
       
       const currentDistance = getDistance(e.touches);
       const scaleChange = currentDistance / initialPinch.current.distance;
@@ -187,23 +226,70 @@ export function usePinchZoom({
       );
       
       setTransform(clamped);
+      return;
     }
     
-    // Single finger pan when zoomed in
-    if (e.touches.length === 1 && transform.scale > 1 && !isPinching.current) {
-      // Pan handled by native scroll since we use overflow
+    // Handle single finger pan when zoomed in
+    if (e.touches.length === 1 && isPanning.current && panStart.current && transform.scale > 1) {
+      e.preventDefault();
+      e.stopPropagation();
+      
+      const touch = e.touches[0];
+      const deltaX = touch.clientX - panStart.current.x;
+      const deltaY = touch.clientY - panStart.current.y;
+      
+      const containerRect = container.getBoundingClientRect();
+      const contentRect = content.getBoundingClientRect();
+      
+      const newTranslateX = panStart.current.translateX + deltaX;
+      const newTranslateY = panStart.current.translateY + deltaY;
+      
+      const clamped = clampTransform(
+        { scale: transform.scale, translateX: newTranslateX, translateY: newTranslateY },
+        containerRect,
+        contentRect
+      );
+      
+      setTransform(clamped);
     }
   }, [containerRef, contentRef, transform.scale, getDistance, getCenter, minScale, maxScale, clampTransform]);
 
   const handleTouchEnd = useCallback((e: TouchEvent) => {
+    // If we still have touches, update state accordingly
     if (e.touches.length < 2) {
       initialPinch.current = null;
       isPinching.current = false;
     }
+    
+    if (e.touches.length === 0) {
+      isPanning.current = false;
+      panStart.current = null;
+    }
+    
+    // If a touch just ended while we were pinching and there's still one finger,
+    // start panning mode if zoomed in
+    if (e.touches.length === 1 && transform.scale > 1) {
+      const touch = e.touches[0];
+      isPanning.current = true;
+      panStart.current = {
+        x: touch.clientX,
+        y: touch.clientY,
+        translateX: transform.translateX,
+        translateY: transform.translateY,
+      };
+    }
+  }, [transform]);
+
+  const handleTouchCancel = useCallback(() => {
+    initialPinch.current = null;
+    isPinching.current = false;
+    isPanning.current = false;
+    panStart.current = null;
   }, []);
 
-  // Handle wheel zoom for desktop
+  // Handle wheel zoom for desktop/web
   const handleWheel = useCallback((e: WheelEvent) => {
+    // Only handle Ctrl/Cmd + wheel for zoom
     if (!e.ctrlKey && !e.metaKey) return;
     
     e.preventDefault();
@@ -236,44 +322,93 @@ export function usePinchZoom({
     setTransform(clamped);
   }, [containerRef, contentRef, transform, minScale, maxScale, clampTransform]);
 
-  // Attach event listeners
+  // Prevent default gestures on native platforms
+  useEffect(() => {
+    if (!isNative) return;
+
+    // Disable default zoom on the document for native apps
+    const preventDefaultGestures = (e: Event) => {
+      if ((e as TouchEvent).touches?.length >= 2) {
+        e.preventDefault();
+      }
+    };
+
+    document.addEventListener('gesturestart', (e) => e.preventDefault());
+    document.addEventListener('gesturechange', (e) => e.preventDefault());
+    document.addEventListener('gestureend', (e) => e.preventDefault());
+    
+    return () => {
+      document.removeEventListener('gesturestart', (e) => e.preventDefault());
+      document.removeEventListener('gesturechange', (e) => e.preventDefault());
+      document.removeEventListener('gestureend', (e) => e.preventDefault());
+    };
+  }, [isNative]);
+
+  // Attach event listeners to container
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    container.addEventListener('touchstart', handleTouchStart, { passive: false });
-    container.addEventListener('touchmove', handleTouchMove, { passive: false });
-    container.addEventListener('touchend', handleTouchEnd);
+    // Use non-passive listeners to allow preventDefault
+    const options: AddEventListenerOptions = { passive: false, capture: true };
+    
+    container.addEventListener('touchstart', handleTouchStart, options);
+    container.addEventListener('touchmove', handleTouchMove, options);
+    container.addEventListener('touchend', handleTouchEnd, options);
+    container.addEventListener('touchcancel', handleTouchCancel, options);
     container.addEventListener('wheel', handleWheel, { passive: false });
 
     return () => {
-      container.removeEventListener('touchstart', handleTouchStart);
-      container.removeEventListener('touchmove', handleTouchMove);
-      container.removeEventListener('touchend', handleTouchEnd);
+      container.removeEventListener('touchstart', handleTouchStart, options);
+      container.removeEventListener('touchmove', handleTouchMove, options);
+      container.removeEventListener('touchend', handleTouchEnd, options);
+      container.removeEventListener('touchcancel', handleTouchCancel, options);
       container.removeEventListener('wheel', handleWheel);
     };
-  }, [containerRef, handleTouchStart, handleTouchMove, handleTouchEnd, handleWheel]);
+  }, [containerRef, handleTouchStart, handleTouchMove, handleTouchEnd, handleTouchCancel, handleWheel]);
 
   const resetZoom = useCallback(() => {
     setTransform({ scale: 1, translateX: 0, translateY: 0 });
   }, []);
 
   const zoomIn = useCallback(() => {
+    const container = containerRef.current;
+    const content = contentRef.current;
+    
     setTransform(prev => {
       const newScale = Math.min(maxScale, prev.scale * 1.25);
+      
+      if (container && content) {
+        const containerRect = container.getBoundingClientRect();
+        const contentRect = content.getBoundingClientRect();
+        return clampTransform({ ...prev, scale: newScale }, containerRect, contentRect);
+      }
+      
       return { ...prev, scale: newScale };
     });
-  }, [maxScale]);
+  }, [maxScale, containerRef, contentRef, clampTransform]);
 
   const zoomOut = useCallback(() => {
+    const container = containerRef.current;
+    const content = contentRef.current;
+    
     setTransform(prev => {
       const newScale = Math.max(minScale, prev.scale / 1.25);
+      
+      // Reset translate when zooming back to 1 or below
       if (newScale <= 1) {
         return { scale: newScale, translateX: 0, translateY: 0 };
       }
+      
+      if (container && content) {
+        const containerRect = container.getBoundingClientRect();
+        const contentRect = content.getBoundingClientRect();
+        return clampTransform({ ...prev, scale: newScale }, containerRect, contentRect);
+      }
+      
       return { ...prev, scale: newScale };
     });
-  }, [minScale]);
+  }, [minScale, containerRef, contentRef, clampTransform]);
 
   return {
     transform,
@@ -281,5 +416,6 @@ export function usePinchZoom({
     zoomOut,
     resetZoom,
     scale: transform.scale,
+    isZoomed: transform.scale > 1,
   };
 }
