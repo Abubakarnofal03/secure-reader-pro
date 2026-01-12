@@ -80,6 +80,38 @@ export function usePinchZoom({
 
   // Store initial content dimensions once set
   const initialContentSize = useRef<{ width: number; height: number } | null>(null);
+  const contentInitialized = useRef(false);
+
+  // Initialize content size on mount/content change
+  useEffect(() => {
+    const content = contentRef.current;
+    if (!content || contentInitialized.current) return;
+    
+    const initContentSize = () => {
+      const rect = content.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        initialContentSize.current = {
+          width: rect.width,
+          height: rect.height,
+        };
+        contentInitialized.current = true;
+      }
+    };
+    
+    // Try immediately
+    initContentSize();
+    
+    // Also observe for changes if not ready yet
+    if (!contentInitialized.current) {
+      const observer = new ResizeObserver(() => {
+        if (!contentInitialized.current) {
+          initContentSize();
+        }
+      });
+      observer.observe(content);
+      return () => observer.disconnect();
+    }
+  }, [contentRef]);
 
   const clampTransform = useCallback((
     newTransform: TransformState, 
@@ -88,14 +120,6 @@ export function usePinchZoom({
     currentScale: number = 1
   ): TransformState => {
     const { scale, translateX, translateY } = newTransform;
-    
-    // Store initial content size on first calculation
-    if (!initialContentSize.current && contentRect.width > 0) {
-      initialContentSize.current = {
-        width: contentRect.width / currentScale,
-        height: contentRect.height / currentScale,
-      };
-    }
     
     // Use stored initial dimensions or calculate from current
     const originalWidth = initialContentSize.current?.width ?? contentRect.width / Math.max(currentScale, 1);
