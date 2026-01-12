@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { Upload, FileUp, X, Loader2 } from 'lucide-react';
+import { Upload, FileUp, X, Loader2, IndianRupee } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -20,6 +20,7 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [price, setPrice] = useState('');
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -43,8 +44,14 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
   };
 
   const handleUpload = async () => {
-    if (!selectedFile || !title.trim()) {
-      toast({ title: 'Error', description: 'Please select a file and enter a title', variant: 'destructive' });
+    if (!selectedFile || !title.trim() || !price.trim()) {
+      toast({ title: 'Error', description: 'Please fill in all required fields', variant: 'destructive' });
+      return;
+    }
+
+    const priceValue = parseFloat(price);
+    if (isNaN(priceValue) || priceValue < 0) {
+      toast({ title: 'Error', description: 'Please enter a valid price', variant: 'destructive' });
       return;
     }
 
@@ -121,6 +128,7 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
           description: description.trim() || null,
           file_path: filePath,
           is_active: true,
+          price: priceValue,
         });
 
       if (insertError) {
@@ -135,6 +143,7 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
       setSelectedFile(null);
       setTitle('');
       setDescription('');
+      setPrice('');
       setUploadProgress(0);
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
@@ -218,6 +227,25 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
           />
         </div>
 
+        {/* Price */}
+        <div>
+          <Label htmlFor="price">Price (₹) *</Label>
+          <div className="relative mt-1.5">
+            <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              id="price"
+              type="number"
+              min="0"
+              step="0.01"
+              value={price}
+              onChange={(e) => setPrice(e.target.value)}
+              placeholder="Enter price"
+              className="pl-9"
+              disabled={uploading}
+            />
+          </div>
+        </div>
+
         {/* Description */}
         <div>
           <Label htmlFor="description">Description (Optional)</Label>
@@ -246,7 +274,7 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
         {/* Upload Button */}
         <Button
           onClick={handleUpload}
-          disabled={!selectedFile || !title.trim() || uploading}
+          disabled={!selectedFile || !title.trim() || !price.trim() || uploading}
           className="w-full"
         >
           {uploading ? (
