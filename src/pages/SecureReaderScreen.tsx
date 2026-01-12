@@ -9,6 +9,7 @@ import { SecurityWarning } from '@/components/SecurityWarning';
 import { GoToPageDialog } from '@/components/reader/GoToPageDialog';
 import { ResumeReadingToast } from '@/components/reader/ResumeReadingToast';
 import { ScrollProgressBar } from '@/components/reader/ScrollProgressBar';
+import { FloatingPageIndicator } from '@/components/reader/FloatingPageIndicator';
 import { Progress } from '@/components/ui/progress';
 import { getDeviceId } from '@/lib/device';
 import { useSecurityMonitor } from '@/hooks/useSecurityMonitor';
@@ -408,6 +409,13 @@ export default function SecureReaderScreen() {
       >
         {/* Enhanced Watermark */}
         <Watermark sessionId={sessionId} />
+        
+        {/* Floating Page Indicator - appears when scrolling */}
+        <FloatingPageIndicator 
+          currentPage={currentPage} 
+          totalPages={numPages} 
+          containerRef={scrollContainerRef}
+        />
         
         {/* Scrollable PDF Container */}
         <div 
