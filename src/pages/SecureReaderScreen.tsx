@@ -1,21 +1,21 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, X, Loader2, AlertTriangle, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
+import { X, Loader2, AlertTriangle, ZoomIn, ZoomOut } from 'lucide-react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Watermark } from '@/components/Watermark';
-import { LoadingScreen } from '@/components/LoadingScreen';
 import { SecurityWarning } from '@/components/SecurityWarning';
-import { PageSlider } from '@/components/reader/PageSlider';
 import { GoToPageDialog } from '@/components/reader/GoToPageDialog';
 import { ResumeReadingToast } from '@/components/reader/ResumeReadingToast';
+import { ScrollProgressBar } from '@/components/reader/ScrollProgressBar';
 import { Progress } from '@/components/ui/progress';
 import { getDeviceId } from '@/lib/device';
 import { useSecurityMonitor } from '@/hooks/useSecurityMonitor';
 import { usePinchZoom } from '@/hooks/usePinchZoom';
 import { useReadingProgress } from '@/hooks/useReadingProgress';
 import { usePrivacyScreen } from '@/hooks/usePrivacyScreen';
+import { useScrollPageDetection } from '@/hooks/useScrollPageDetection';
 
 // Set up PDF.js worker
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
@@ -49,7 +49,6 @@ export default function SecureReaderScreen() {
   
   const [content, setContent] = useState<ContentDetails | null>(null);
   const [numPages, setNumPages] = useState<number>(0);
-  const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -58,6 +57,17 @@ export default function SecureReaderScreen() {
   const [showGoToDialog, setShowGoToDialog] = useState(false);
   const [recentPages, setRecentPages] = useState<number[]>([]);
   const [hasInitializedPage, setHasInitializedPage] = useState(false);
+
+  // Scroll-based page detection
+  const { 
+    containerRef: scrollContainerRef, 
+    registerPage, 
+    currentPage, 
+    scrollToPage 
+  } = useScrollPageDetection({
+    totalPages: numPages,
+    enabled: numPages > 0,
+  });
 
   // Reading progress hook
   const {
@@ -243,21 +253,24 @@ export default function SecureReaderScreen() {
 
   const goToPage = useCallback((page: number) => {
     if (page >= 1 && page <= numPages) {
-      setCurrentPage(page);
+      scrollToPage(page, 'smooth');
     }
-  }, [numPages]);
+  }, [numPages, scrollToPage]);
 
   const handleResume = useCallback(() => {
     if (savedProgress) {
-      setCurrentPage(savedProgress.currentPage);
+      // Use setTimeout to ensure pages are rendered before scrolling
+      setTimeout(() => {
+        scrollToPage(savedProgress.currentPage, 'smooth');
+      }, 100);
     }
     dismissResumePrompt();
-  }, [savedProgress, dismissResumePrompt]);
+  }, [savedProgress, dismissResumePrompt, scrollToPage]);
 
   const handleStartOver = useCallback(() => {
-    setCurrentPage(1);
+    scrollToPage(1, 'smooth');
     dismissResumePrompt();
-  }, [dismissResumePrompt]);
+  }, [dismissResumePrompt, scrollToPage]);
 
   const handleClose = useCallback(() => {
     // Save progress before closing
@@ -308,6 +321,9 @@ export default function SecureReaderScreen() {
         height: '100dvh', // Use dynamic viewport height for mobile
       }}
     >
+      {/* Scroll Progress Bar */}
+      <ScrollProgressBar currentPage={currentPage} totalPages={numPages} />
+
       {/* Security Warning Overlay (iOS) */}
       <SecurityWarning
         isRecording={isRecording}
@@ -385,25 +401,29 @@ export default function SecureReaderScreen() {
         </div>
       </header>
 
-      {/* PDF Viewer with Watermark */}
-      <main className="relative flex-1 overflow-hidden">
+      {/* PDF Viewer with Watermark - Continuous Scroll */}
+      <main 
+        ref={contentRef}
+        className="relative flex-1 overflow-hidden"
+      >
         {/* Enhanced Watermark */}
         <Watermark sessionId={sessionId} />
         
-        {/* PDF Content - Container for pinch zoom */}
+        {/* Scrollable PDF Container */}
         <div 
-          ref={contentRef}
-          className="flex justify-center items-start py-2 relative h-full w-full overflow-auto"
+          ref={scrollContainerRef}
+          className="h-full overflow-y-auto overflow-x-hidden"
           style={{
             pointerEvents: 'auto',
-            touchAction: 'pan-x pan-y', // Allow scrolling, our handler takes over pinch
+            touchAction: scale > 1 ? 'none' : 'pan-y', // Allow vertical scroll when not zoomed
           }}
         >
           <div
             ref={pdfWrapperRef}
+            className="flex flex-col items-center py-4 gap-4"
             style={{
               transform: `translate(${transform.translateX}px, ${transform.translateY}px) scale(${transform.scale})`,
-              transformOrigin: 'center center',
+              transformOrigin: 'top center',
               transition: 'none',
             }}
           >
@@ -425,46 +445,39 @@ export default function SecureReaderScreen() {
                   </div>
                 }
               >
-                <Page
-                  pageNumber={currentPage}
-                  width={pageWidth}
-                  renderTextLayer={false}
-                  renderAnnotationLayer={false}
-                  className="shadow-lg rounded-sm"
-                />
+                {/* Render all pages for continuous scrolling */}
+                {Array.from({ length: numPages }, (_, index) => {
+                  const pageNumber = index + 1;
+                  return (
+                    <div
+                      key={pageNumber}
+                      data-page={pageNumber}
+                      ref={(el) => registerPage(pageNumber, el)}
+                      className="flex justify-center"
+                    >
+                      <Page
+                        pageNumber={pageNumber}
+                        width={pageWidth}
+                        renderTextLayer={false}
+                        renderAnnotationLayer={false}
+                        className="shadow-lg rounded-sm"
+                        loading={
+                          <div 
+                            className="flex items-center justify-center bg-muted/30 rounded-sm"
+                            style={{ width: pageWidth, height: pageWidth * 1.4 }}
+                          >
+                            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                          </div>
+                        }
+                      />
+                    </div>
+                  );
+                })}
               </Document>
             )}
           </div>
         </div>
       </main>
-
-      {/* Navigation Footer */}
-      <footer className="sticky bottom-0 z-30 glass border-t border-border px-4 py-3 safe-bottom">
-        <div className="flex items-center justify-between max-w-lg mx-auto">
-          <button
-            onClick={() => goToPage(currentPage - 1)}
-            disabled={currentPage <= 1}
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-secondary disabled:opacity-30 transition-opacity flex-shrink-0"
-          >
-            <ChevronLeft className="h-5 w-5 text-secondary-foreground" />
-          </button>
-
-          {/* Page Slider */}
-          <PageSlider
-            currentPage={currentPage}
-            totalPages={numPages}
-            onPageChange={goToPage}
-          />
-
-          <button
-            onClick={() => goToPage(currentPage + 1)}
-            disabled={currentPage >= numPages}
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-secondary disabled:opacity-30 transition-opacity flex-shrink-0"
-          >
-            <ChevronRight className="h-5 w-5 text-secondary-foreground" />
-          </button>
-        </div>
-      </footer>
     </div>
   );
 }
