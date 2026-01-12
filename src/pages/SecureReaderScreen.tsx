@@ -300,11 +300,12 @@ export default function SecureReaderScreen() {
   return (
     <div 
       ref={containerRef}
-      className="flex min-h-screen flex-col bg-reader-bg secure-content safe-top safe-bottom"
+      className="flex h-screen flex-col bg-reader-bg secure-content safe-top safe-bottom overflow-hidden"
       style={{
         WebkitTouchCallout: 'none',
         WebkitUserSelect: 'none',
         userSelect: 'none',
+        height: '100dvh', // Use dynamic viewport height for mobile
       }}
     >
       {/* Security Warning Overlay (iOS) */}
@@ -385,17 +386,17 @@ export default function SecureReaderScreen() {
       </header>
 
       {/* PDF Viewer with Watermark */}
-      <main className="relative flex-1 overflow-auto scrollbar-hide">
+      <main className="relative flex-1 overflow-hidden">
         {/* Enhanced Watermark */}
         <Watermark sessionId={sessionId} />
         
         {/* PDF Content - Container for pinch zoom */}
         <div 
           ref={contentRef}
-          className="flex justify-center py-4 relative min-h-full overflow-auto"
+          className="flex justify-center items-start py-2 relative h-full w-full overflow-auto"
           style={{
             pointerEvents: 'auto',
-            touchAction: 'none', // Let our pinch zoom handler take over
+            touchAction: 'pan-x pan-y', // Allow scrolling, our handler takes over pinch
           }}
         >
           <div
