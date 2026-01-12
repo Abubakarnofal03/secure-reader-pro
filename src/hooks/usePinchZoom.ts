@@ -78,16 +78,28 @@ export function usePinchZoom({
     };
   }, []);
 
+  // Store initial content dimensions once set
+  const initialContentSize = useRef<{ width: number; height: number } | null>(null);
+
   const clampTransform = useCallback((
     newTransform: TransformState, 
     containerRect: DOMRect, 
-    contentRect: DOMRect
+    contentRect: DOMRect,
+    currentScale: number = 1
   ): TransformState => {
     const { scale, translateX, translateY } = newTransform;
     
-    // Use the original content dimensions before any transform
-    const originalWidth = contentRect.width / transform.scale;
-    const originalHeight = contentRect.height / transform.scale;
+    // Store initial content size on first calculation
+    if (!initialContentSize.current && contentRect.width > 0) {
+      initialContentSize.current = {
+        width: contentRect.width / currentScale,
+        height: contentRect.height / currentScale,
+      };
+    }
+    
+    // Use stored initial dimensions or calculate from current
+    const originalWidth = initialContentSize.current?.width ?? contentRect.width / Math.max(currentScale, 1);
+    const originalHeight = initialContentSize.current?.height ?? contentRect.height / Math.max(currentScale, 1);
     
     const scaledWidth = originalWidth * scale;
     const scaledHeight = originalHeight * scale;
@@ -112,7 +124,7 @@ export function usePinchZoom({
     }
     
     return { scale, translateX: clampedX, translateY: clampedY };
-  }, [transform.scale]);
+  }, []);
 
   const handleTouchStart = useCallback((e: TouchEvent) => {
     const container = containerRef.current;
@@ -177,7 +189,8 @@ export function usePinchZoom({
             const clamped = clampTransform(
               { scale: newScale, translateX: newTranslateX, translateY: newTranslateY },
               containerRect,
-              contentRect
+              contentRect,
+              transform.scale
             );
             setTransform(clamped);
           }
@@ -234,7 +247,8 @@ export function usePinchZoom({
       const clamped = clampTransform(
         { scale: newScale, translateX: newTranslateX, translateY: newTranslateY },
         containerRect,
-        contentRect
+        contentRect,
+        initialPinch.current.scale
       );
       
       setTransform(clamped);
@@ -259,7 +273,8 @@ export function usePinchZoom({
       const clamped = clampTransform(
         { scale: transform.scale, translateX: newTranslateX, translateY: newTranslateY },
         containerRect,
-        contentRect
+        contentRect,
+        transform.scale
       );
       
       setTransform(clamped);
@@ -328,7 +343,8 @@ export function usePinchZoom({
     const clamped = clampTransform(
       { scale: newScale, translateX: newTranslateX, translateY: newTranslateY },
       containerRect,
-      contentRect
+      contentRect,
+      transform.scale
     );
     
     setTransform(clamped);
@@ -393,7 +409,7 @@ export function usePinchZoom({
       if (container && content) {
         const containerRect = container.getBoundingClientRect();
         const contentRect = content.getBoundingClientRect();
-        return clampTransform({ ...prev, scale: newScale }, containerRect, contentRect);
+        return clampTransform({ ...prev, scale: newScale }, containerRect, contentRect, prev.scale);
       }
       
       return { ...prev, scale: newScale };
@@ -415,7 +431,7 @@ export function usePinchZoom({
       if (container && content) {
         const containerRect = container.getBoundingClientRect();
         const contentRect = content.getBoundingClientRect();
-        return clampTransform({ ...prev, scale: newScale }, containerRect, contentRect);
+        return clampTransform({ ...prev, scale: newScale }, containerRect, contentRect, prev.scale);
       }
       
       return { ...prev, scale: newScale };
