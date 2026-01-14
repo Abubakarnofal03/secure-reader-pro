@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { SessionInvalidatedDialog } from "@/components/SessionInvalidatedDialog";
+import { DeviceConflictDialog } from "@/components/DeviceConflictDialog";
 import { ThemeProvider } from "next-themes";
 
 import SplashScreen from "./pages/SplashScreen";
@@ -29,6 +30,7 @@ const App = () => (
         <BrowserRouter>
           <AuthProvider>
             <SessionInvalidatedDialog />
+            <DeviceConflictDialog />
             <Routes>
               <Route path="/" element={<SplashScreen />} />
               <Route path="/login" element={<LoginScreen />} />
