@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { SessionInvalidatedDialog } from "@/components/SessionInvalidatedDialog";
+import { ThemeProvider } from "next-themes";
 
 import SplashScreen from "./pages/SplashScreen";
 import LoginScreen from "./pages/LoginScreen";
@@ -21,46 +22,48 @@ const queryClient = new QueryClient();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <AuthProvider>
-          <SessionInvalidatedDialog />
-          <Routes>
-            <Route path="/" element={<SplashScreen />} />
-            <Route path="/login" element={<LoginScreen />} />
-            <Route path="/signup" element={<SignupScreen />} />
-            <Route path="/access-pending" element={
-              <ProtectedRoute requireAccess={false}>
-                <AccessPendingScreen />
-              </ProtectedRoute>
-            } />
-            <Route path="/library" element={
-              <ProtectedRoute>
-                <ContentListScreen />
-              </ProtectedRoute>
-            } />
-            <Route path="/reader/:id" element={
-              <ProtectedRoute>
-                <SecureReaderScreen />
-              </ProtectedRoute>
-            } />
-            <Route path="/profile" element={
-              <ProtectedRoute requireAccess={false}>
-                <ProfileScreen />
-              </ProtectedRoute>
-            } />
-            <Route path="/admin" element={
-              <ProtectedRoute requireAdmin>
-                <AdminScreen />
-              </ProtectedRoute>
-            } />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </AuthProvider>
-      </BrowserRouter>
-    </TooltipProvider>
+    <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <AuthProvider>
+            <SessionInvalidatedDialog />
+            <Routes>
+              <Route path="/" element={<SplashScreen />} />
+              <Route path="/login" element={<LoginScreen />} />
+              <Route path="/signup" element={<SignupScreen />} />
+              <Route path="/access-pending" element={
+                <ProtectedRoute requireAccess={false}>
+                  <AccessPendingScreen />
+                </ProtectedRoute>
+              } />
+              <Route path="/library" element={
+                <ProtectedRoute>
+                  <ContentListScreen />
+                </ProtectedRoute>
+              } />
+              <Route path="/reader/:id" element={
+                <ProtectedRoute>
+                  <SecureReaderScreen />
+                </ProtectedRoute>
+              } />
+              <Route path="/profile" element={
+                <ProtectedRoute requireAccess={false}>
+                  <ProfileScreen />
+                </ProtectedRoute>
+              } />
+              <Route path="/admin" element={
+                <ProtectedRoute requireAdmin>
+                  <AdminScreen />
+                </ProtectedRoute>
+              } />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </AuthProvider>
+        </BrowserRouter>
+      </TooltipProvider>
+    </ThemeProvider>
   </QueryClientProvider>
 );
 

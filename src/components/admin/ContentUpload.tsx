@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { CoverUpload } from './CoverUpload';
 
 interface ContentUploadProps {
   onSuccess: () => void;
@@ -21,6 +22,7 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
+  const [coverUrl, setCoverUrl] = useState<string | null>(null);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -129,6 +131,7 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
           file_path: filePath,
           is_active: true,
           price: priceValue,
+          cover_url: coverUrl,
         });
 
       if (insertError) {
@@ -144,6 +147,7 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
       setTitle('');
       setDescription('');
       setPrice('');
+      setCoverUrl(null);
       setUploadProgress(0);
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
@@ -172,12 +176,20 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
 
   return (
     <div className="space-y-4 rounded-xl bg-card p-4 border border-border">
-      <h3 className="flex items-center gap-2 font-semibold">
+      <h3 className="flex items-center gap-2 font-semibold font-display">
         <Upload className="h-5 w-5" />
-        Upload New Content
+        Upload New Publication
       </h3>
 
-      <div className="space-y-3">
+      <div className="grid grid-cols-[auto_1fr] gap-4">
+
+        {/* Cover Upload */}
+        <div>
+          <Label className="text-xs text-muted-foreground mb-2 block">Cover Image</Label>
+          <CoverUpload coverUrl={coverUrl} onCoverChange={setCoverUrl} disabled={uploading} />
+        </div>
+
+        <div className="space-y-3">
         {/* File Selection */}
         <div>
           <Label htmlFor="file">PDF File</Label>
@@ -289,6 +301,7 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
             </>
           )}
         </Button>
+        </div>
       </div>
     </div>
   );

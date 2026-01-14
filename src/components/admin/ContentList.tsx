@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { BookOpen, ToggleLeft, ToggleRight, Trash2, Users, Loader2, RefreshCw } from 'lucide-react';
+import { ToggleLeft, ToggleRight, Trash2, Users, Loader2, RefreshCw, ImagePlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { BookCover } from '@/components/library/BookCover';
 
 interface Content {
   id: string;
@@ -22,6 +23,7 @@ interface Content {
   is_active: boolean;
   created_at: string;
   price: number;
+  cover_url: string | null;
 }
 
 interface ContentListProps {
@@ -177,6 +179,58 @@ export function ContentList({ onManageAccess, refreshTrigger }: ContentListProps
     }
   };
 
+  const handleCoverUpload = async (contentId: string, file: File) => {
+    try {
+      const timestamp = Date.now();
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${timestamp}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+      const filePath = `covers/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('content-covers')
+        .upload(filePath, file, { contentType: file.type });
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('content-covers')
+        .getPublicUrl(filePath);
+
+      const { error: updateError } = await supabase
+        .from('content')
+        .update({ cover_url: publicUrl })
+        .eq('id', contentId);
+
+      if (updateError) throw updateError;
+
+      toast({ title: 'Success', description: 'Cover updated' });
+      fetchContents();
+    } catch (error) {
+      toast({
+        title: 'Upload Failed',
+        description: error instanceof Error ? error.message : 'Failed to upload cover',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleCoverClick = (contentId: string) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.onchange = (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (file) {
+        if (file.size > 5 * 1024 * 1024) {
+          toast({ title: 'Error', description: 'Image must be less than 5MB', variant: 'destructive' });
+          return;
+        }
+        handleCoverUpload(contentId, file);
+      }
+    };
+    input.click();
+  };
+
   if (loading) {
     return (
       <div className="space-y-3">
@@ -190,8 +244,8 @@ export function ContentList({ onManageAccess, refreshTrigger }: ContentListProps
   if (contents.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center rounded-xl bg-muted/50 p-8 text-center">
-        <BookOpen className="h-12 w-12 text-muted-foreground mb-3" />
-        <p className="text-muted-foreground">No content uploaded yet</p>
+        <BookCover coverUrl={null} title="" size="lg" className="mb-4 opacity-50" />
+        <p className="text-muted-foreground font-display">No publications yet</p>
         <p className="text-sm text-muted-foreground">Upload your first PDF above</p>
       </div>
     );
@@ -212,26 +266,35 @@ export function ContentList({ onManageAccess, refreshTrigger }: ContentListProps
         {contents.map((content) => (
           <div
             key={content.id}
-            className="flex items-center justify-between gap-3 rounded-xl bg-card p-4 border border-border"
+            className="flex items-center gap-4 rounded-xl bg-card p-4 border border-border"
           >
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <BookOpen className="h-4 w-4 flex-shrink-0 text-primary" />
-                <h4 className="font-medium truncate">{content.title}</h4>
+            {/* Cover with edit option */}
+            <button
+              onClick={() => handleCoverClick(content.id)}
+              className="relative group flex-shrink-0"
+              title="Click to change cover"
+            >
+              <BookCover coverUrl={content.cover_url} title={content.title} size="sm" />
+              <div className="absolute inset-0 flex items-center justify-center bg-background/80 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl">
+                <ImagePlus className="h-4 w-4 text-muted-foreground" />
               </div>
+            </button>
+
+            <div className="min-w-0 flex-1">
+              <h4 className="font-display font-semibold truncate">{content.title}</h4>
               {content.description && (
-                <p className="mt-1 text-sm text-muted-foreground line-clamp-1">
+                <p className="mt-0.5 text-sm text-muted-foreground line-clamp-1">
                   {content.description}
                 </p>
               )}
-              <div className="mt-1 flex items-center gap-2 flex-wrap">
+              <div className="mt-1.5 flex items-center gap-2 flex-wrap">
                 <span className="inline-flex items-center rounded-full bg-primary/10 text-primary px-2 py-0.5 text-xs font-medium">
                   ₹{content.price}
                 </span>
                 <span
                   className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
                     content.is_active
-                      ? 'bg-success/10 text-success'
+                      ? 'bg-[hsl(var(--success)/0.1)] text-[hsl(var(--success))]'
                       : 'bg-muted text-muted-foreground'
                   }`}
                 >

@@ -5,6 +5,8 @@ import { BookOpen, User, ChevronRight, Library, Clock, CheckCircle, Store, Refre
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { PurchaseDialog } from '@/components/library/PurchaseDialog';
+import { BookCover } from '@/components/library/BookCover';
+import { ThemeToggle } from '@/components/ThemeToggle';
 
 interface ContentItem {
   id: string;
@@ -12,6 +14,7 @@ interface ContentItem {
   description: string | null;
   file_path: string;
   price: number;
+  cover_url: string | null;
 }
 
 interface PurchaseStatus {
@@ -49,7 +52,7 @@ export default function ContentListScreen() {
     
     const { data: contentData, error: contentError } = await supabase
       .from('content')
-      .select('id, title, description, file_path, price')
+      .select('id, title, description, file_path, price, cover_url')
       .eq('is_active', true)
       .order('created_at', { ascending: false });
 
@@ -184,11 +187,12 @@ export default function ContentListScreen() {
               className="flex h-11 w-11 items-center justify-center rounded-xl bg-secondary border border-border/50 transition-all hover:bg-secondary/80"
             >
               {profile?.role === 'admin' ? (
-                <Crown className="h-5 w-5 text-[hsl(43_74%_49%)]" />
+                <Crown className="h-5 w-5 text-[hsl(var(--gold))]" />
               ) : (
                 <User className="h-5 w-5 text-muted-foreground" />
               )}
             </button>
+            <ThemeToggle />
           </div>
 
           {/* Premium Tab Switcher */}
@@ -330,19 +334,13 @@ export default function ContentListScreen() {
                           : 'border-border/80 hover:border-primary/30 hover:shadow-[var(--shadow-lg)]'
                     }`}
                   >
-                    {/* Book Cover Placeholder */}
-                    <div className={`relative flex h-20 w-16 flex-shrink-0 items-center justify-center rounded-xl overflow-hidden ${
-                      isPurchased 
-                        ? 'bg-gradient-to-br from-primary/10 to-primary/5 border border-primary/20' 
-                        : 'bg-gradient-to-br from-muted to-muted/50 border border-border/50'
-                    }`}>
-                      <BookOpen className={`h-7 w-7 ${isPurchased ? 'text-primary' : 'text-muted-foreground'}`} />
-                      {isPurchased && (
-                        <div className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-gradient-to-br from-[hsl(43_74%_49%)] to-[hsl(38_72%_55%)] flex items-center justify-center shadow-[var(--shadow-gold)]">
-                          <CheckCircle className="h-3 w-3 text-[hsl(222_47%_11%)]" />
-                        </div>
-                      )}
-                    </div>
+                    {/* Book Cover */}
+                    <BookCover 
+                      coverUrl={item.cover_url} 
+                      title={item.title} 
+                      isOwned={isPurchased}
+                      size="md"
+                    />
 
                     {/* Content */}
                     <div className="min-w-0 flex-1">

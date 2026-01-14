@@ -1,12 +1,14 @@
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { User, LogOut, ChevronRight, Shield, Mail, Crown, BookOpen } from 'lucide-react';
+import { User, LogOut, ChevronRight, Shield, Mail, Crown, BookOpen, Moon, Sun } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
+import { useTheme } from 'next-themes';
 
 export default function ProfileScreen() {
   const { profile, signOut } = useAuth();
   const navigate = useNavigate();
+  const { theme, setTheme } = useTheme();
 
   const handleSignOut = async () => {
     await signOut();
@@ -94,6 +96,29 @@ export default function ProfileScreen() {
                 </div>
               </div>
             </div>
+          </div>
+
+          {/* Theme Toggle */}
+          <div className="rounded-2xl border border-border/80 bg-card shadow-[var(--shadow-md)]">
+            <button
+              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+              className="flex w-full items-center justify-between px-5 py-4"
+            >
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-secondary">
+                  {theme === 'dark' ? (
+                    <Moon className="h-5 w-5 text-muted-foreground" />
+                  ) : (
+                    <Sun className="h-5 w-5 text-muted-foreground" />
+                  )}
+                </div>
+                <div className="text-left">
+                  <p className="text-sm font-medium">Appearance</p>
+                  <p className="text-xs text-muted-foreground">{theme === 'dark' ? 'AMOLED Dark' : 'Light Mode'}</p>
+                </div>
+              </div>
+              <ChevronRight className="h-5 w-5 text-muted-foreground" />
+            </button>
           </div>
 
           <Button
