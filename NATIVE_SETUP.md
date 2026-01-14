@@ -32,7 +32,9 @@ This document provides instructions for building the SecureReader app for Androi
 
 ## Android Setup
 
-### Add Screenshot/Recording Protection
+### Screenshot/Recording Protection (FLAG_SECURE)
+
+Android's `FLAG_SECURE` **completely blocks** screenshots and screen recording. This is the most secure option available on any mobile platform.
 
 Edit `android/app/src/main/java/com/securereader/app/MainActivity.java`:
 
@@ -48,7 +50,17 @@ public class MainActivity extends BridgeActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         
-        // Add FLAG_SECURE to block screenshots and screen recording
+        // FLAG_SECURE blocks ALL screenshots and screen recording
+        getWindow().setFlags(
+            WindowManager.LayoutParams.FLAG_SECURE,
+            WindowManager.LayoutParams.FLAG_SECURE
+        );
+    }
+    
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // Re-apply FLAG_SECURE when app returns to foreground
         getWindow().setFlags(
             WindowManager.LayoutParams.FLAG_SECURE,
             WindowManager.LayoutParams.FLAG_SECURE
@@ -57,10 +69,14 @@ public class MainActivity extends BridgeActivity {
 }
 ```
 
-This single flag accomplishes:
-- ✅ Blocks screenshots
-- ✅ Blocks screen recording
-- ✅ Shows blank in recent apps preview
+**What FLAG_SECURE does:**
+- ✅ **Blocks ALL screenshots** - Screenshot attempts show blank/black screen
+- ✅ **Blocks ALL screen recording** - Recorded video shows blank/black for the app
+- ✅ **Hides in recent apps** - App preview in task switcher is blank
+- ✅ **Blocks screen mirroring** - Cast/mirror shows blank screen
+- ✅ **Works system-wide** - No app can capture the screen content
+
+**Note:** This is enforced at the OS level and cannot be bypassed on non-rooted devices.
 
 ### Build APK/AAB
 
@@ -77,7 +93,18 @@ npx cap open android
 
 ## iOS Setup
 
-### Add Security Plugin
+### Important: iOS Cannot Block Screenshots
+
+Unlike Android, **iOS does not allow apps to block screenshots or screen recording**. This is an Apple policy.
+
+**What we CAN do on iOS:**
+- ✅ Detect when a screenshot is taken
+- ✅ Detect when screen recording starts/stops
+- ✅ Show a warning overlay when recording
+- ✅ Apply watermarks to identify the source
+- ✅ Hide content in app switcher (via Privacy Screen plugin)
+
+### Security Plugin for Detection
 
 1. Create `ios/App/App/SecurityPlugin.swift`:
 
@@ -87,7 +114,14 @@ import Capacitor
 import UIKit
 
 @objc(SecurityPlugin)
-public class SecurityPlugin: CAPPlugin {
+public class SecurityPlugin: CAPPlugin, CAPBridgedPlugin {
+    public let identifier = "SecurityPlugin"
+    public let jsName = "Security"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "isScreenRecording", returnType: CAPPluginReturnPromise)
+    ]
+    
+    private var securityOverlay: UIView?
     
     override public func load() {
         // Listen for screenshots
@@ -105,6 +139,11 @@ public class SecurityPlugin: CAPPlugin {
             name: UIScreen.capturedDidChangeNotification,
             object: nil
         )
+        
+        // Check initial recording state
+        if UIScreen.main.isCaptured {
+            showSecurityOverlay()
+        }
     }
     
     @objc func screenshotTaken() {
@@ -114,11 +153,73 @@ public class SecurityPlugin: CAPPlugin {
     @objc func screenRecordingChanged() {
         let isRecording = UIScreen.main.isCaptured
         notifyListeners("screenRecordingChanged", data: ["recording": isRecording])
+        
+        // Show/hide overlay based on recording state
+        if isRecording {
+            showSecurityOverlay()
+        } else {
+            hideSecurityOverlay()
+        }
     }
     
     @objc func isScreenRecording(_ call: CAPPluginCall) {
         let isRecording = UIScreen.main.isCaptured
         call.resolve(["recording": isRecording])
+    }
+    
+    private func showSecurityOverlay() {
+        DispatchQueue.main.async { [weak self] in
+            guard self?.securityOverlay == nil else { return }
+            
+            if let window = UIApplication.shared.windows.first {
+                let overlay = UIView(frame: window.bounds)
+                overlay.backgroundColor = UIColor.systemBackground
+                overlay.tag = 999
+                
+                // Create warning label
+                let label = UILabel()
+                label.text = "Screen Recording Detected\n\nContent is hidden while recording is active."
+                label.numberOfLines = 0
+                label.textAlignment = .center
+                label.textColor = .systemRed
+                label.font = UIFont.systemFont(ofSize: 18, weight: .semibold)
+                label.translatesAutoresizingMaskIntoConstraints = false
+                
+                // Create icon
+                let imageView = UIImageView(image: UIImage(systemName: "video.slash.fill"))
+                imageView.tintColor = .systemRed
+                imageView.translatesAutoresizingMaskIntoConstraints = false
+                imageView.contentMode = .scaleAspectFit
+                
+                overlay.addSubview(imageView)
+                overlay.addSubview(label)
+                
+                NSLayoutConstraint.activate([
+                    imageView.centerXAnchor.constraint(equalTo: overlay.centerXAnchor),
+                    imageView.centerYAnchor.constraint(equalTo: overlay.centerYAnchor, constant: -50),
+                    imageView.widthAnchor.constraint(equalToConstant: 60),
+                    imageView.heightAnchor.constraint(equalToConstant: 60),
+                    
+                    label.topAnchor.constraint(equalTo: imageView.bottomAnchor, constant: 20),
+                    label.leadingAnchor.constraint(equalTo: overlay.leadingAnchor, constant: 40),
+                    label.trailingAnchor.constraint(equalTo: overlay.trailingAnchor, constant: -40)
+                ])
+                
+                window.addSubview(overlay)
+                self?.securityOverlay = overlay
+            }
+        }
+    }
+    
+    private func hideSecurityOverlay() {
+        DispatchQueue.main.async { [weak self] in
+            self?.securityOverlay?.removeFromSuperview()
+            self?.securityOverlay = nil
+        }
+    }
+    
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 }
 ```
@@ -134,9 +235,13 @@ CAP_PLUGIN(SecurityPlugin, "Security",
 )
 ```
 
-3. Register the plugin in `ios/App/App/AppDelegate.swift`:
+### Privacy Screen Plugin
 
-Add import and registration if needed (Capacitor auto-discovers plugins in most cases).
+The app uses `@capacitor/privacy-screen` which:
+- Blurs/hides content in the iOS app switcher
+- Provides additional privacy when switching apps
+
+This is enabled in the reader screen via `usePrivacyScreen(true)`.
 
 ### Build IPA
 
@@ -151,30 +256,81 @@ npx cap open ios
 
 ---
 
-## Security Features Summary
+## Security Features Comparison
 
-| Feature | Android | iOS |
-|---------|---------|-----|
-| Block screenshots | ✅ FLAG_SECURE | ❌ Not possible |
-| Block screen recording | ✅ FLAG_SECURE | ❌ Not possible |
-| Detect screenshots | N/A (blocked) | ✅ Plugin |
-| Detect recording | N/A (blocked) | ✅ Plugin |
-| Hide in recent apps | ✅ FLAG_SECURE | ❌ Not possible |
-| Dynamic watermark | ✅ JS | ✅ JS |
-| Session validation | ✅ Edge function | ✅ Edge function |
+| Feature | Android | iOS | Notes |
+|---------|---------|-----|-------|
+| **Block screenshots** | ✅ Complete | ❌ Not possible | Android uses FLAG_SECURE |
+| **Block screen recording** | ✅ Complete | ❌ Not possible | Apple policy prevents this |
+| **Detect screenshots** | N/A (blocked) | ✅ Plugin | Can log/warn user |
+| **Detect recording** | N/A (blocked) | ✅ Plugin | Can show overlay |
+| **Hide content when recording** | ✅ Automatic | ✅ Native overlay | Swift plugin shows warning |
+| **Hide in recent apps** | ✅ FLAG_SECURE | ✅ Privacy Screen | Uses different mechanisms |
+| **Dynamic watermark** | ✅ React | ✅ React | Identifies user on leaked content |
+| **Session validation** | ✅ Edge function | ✅ Edge function | Single-device enforcement |
+
+---
+
+## Testing Security Features
+
+### Android Testing
+
+1. Install the app on a device
+2. Open the reader with a PDF
+3. Try to take a screenshot → Should show black/blank
+4. Try screen recording → Recorded video should show blank for the app
+5. Check recent apps → App preview should be blank
+
+### iOS Testing
+
+1. Install the app on a device
+2. Open the reader with a PDF
+3. Take a screenshot → Warning notification appears, screenshot shows watermarked content
+4. Start screen recording → Full-screen overlay hides content
+5. Stop recording → Content reappears
+6. Check app switcher → Content should be blurred/hidden
 
 ---
 
 ## Troubleshooting
 
 ### Android: FLAG_SECURE not working
-- Ensure you're testing on a real device or emulator with Google Play Services
-- Some screen recording apps bypass FLAG_SECURE on rooted devices
+- Ensure you're testing on a **real device** (some emulators may not respect FLAG_SECURE)
+- Check that MainActivity.java has the correct package name
+- Verify the flag is applied in both `onCreate` AND `onResume`
+- On rooted devices, some apps may bypass FLAG_SECURE
 
-### iOS: Plugin not loading
-- Run `npx cap sync ios` after adding the plugin files
-- Check that the plugin files are in the correct Xcode target
+### iOS: Security plugin not loading
+1. Run `npx cap sync ios` after adding the plugin files
+2. In Xcode, verify the Swift files are in the correct target
+3. Clean build: Product → Clean Build Folder
+4. Check Console.app for any plugin loading errors
+
+### iOS: Overlay not showing
+- Ensure the plugin's `load()` method is called
+- Check that the overlay is added to the correct window
+- Verify `UIScreen.main.isCaptured` returns `true` when recording
+
+### Login not persisting on mobile
+- The app uses `@capacitor/preferences` for persistent storage
+- After updating, run `npx cap sync` to ensure the plugin is properly installed
+- Clear app data and try again if issues persist
 
 ### Build fails
-- Clear caches: `npx cap clean`
-- Rebuild: `npm run build && npx cap sync`
+1. Clear caches:
+   ```bash
+   npx cap clean
+   rm -rf node_modules
+   npm install
+   ```
+2. Rebuild:
+   ```bash
+   npm run build
+   npx cap sync
+   ```
+3. For iOS, also try:
+   ```bash
+   cd ios/App
+   pod install --repo-update
+   cd ../..
+   ```
