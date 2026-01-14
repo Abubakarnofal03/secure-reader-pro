@@ -102,18 +102,45 @@ export function PurchaseDialog({ content, onClose, onPurchaseSubmitted }: Purcha
       if (uploadError) throw uploadError;
 
       // Create purchase request
-      const { error: requestError } = await supabase
+      const { data: requestData, error: requestError } = await supabase
         .from('purchase_requests')
         .insert({
           user_id: user.id,
           content_id: content.id,
           payment_proof_path: fileName,
-        });
+        })
+        .select('id')
+        .single();
 
       if (requestError) {
         // If insert fails, clean up uploaded file
         await supabase.storage.from('payment-proofs').remove([fileName]);
         throw requestError;
+      }
+
+      // Send push notification to admins (don't block on failure)
+      try {
+        const { data: userData } = await supabase
+          .from('profiles')
+          .select('name, email')
+          .eq('id', user.id)
+          .single();
+
+        const userName = userData?.name || userData?.email || 'A user';
+
+        await supabase.functions.invoke('send-push-notification', {
+          body: {
+            title: 'New Purchase Request',
+            body: `${userName} requested "${content.title}"`,
+            data: {
+              type: 'purchase_request',
+              request_id: requestData?.id || '',
+            },
+          },
+        });
+      } catch (notifError) {
+        // Log but don't fail the purchase submission
+        console.log('Push notification failed (non-critical):', notifError);
       }
 
       setSubmitted(true);
