@@ -9,6 +9,7 @@ export const useAdminFCM = () => {
   const [error, setError] = useState<string | null>(null);
   const [isSupported, setIsSupported] = useState(false);
   const hasAttempted = useRef(false);
+  const listenersRegistered = useRef(false);
 
   useEffect(() => {
     // Only register FCM for admins on native platforms
@@ -36,10 +37,31 @@ export const useAdminFCM = () => {
         }
 
         // Dynamically import to prevent crashes if plugin not configured
-        const { PushNotifications } = await import('@capacitor/push-notifications');
+        let PushNotifications: any;
+        try {
+          const module = await import('@capacitor/push-notifications');
+          PushNotifications = module.PushNotifications;
+        } catch (importError) {
+          console.error('Failed to import PushNotifications:', importError);
+          setError('Push notifications module not available');
+          return;
+        }
+
+        if (!PushNotifications) {
+          console.log('PushNotifications not loaded');
+          setError('Push notifications not loaded');
+          return;
+        }
         
-        // Check current permission status first
-        const permissionStatus = await PushNotifications.checkPermissions();
+        // Check current permission status first - wrap in try-catch
+        let permissionStatus;
+        try {
+          permissionStatus = await PushNotifications.checkPermissions();
+        } catch (permError) {
+          console.error('Failed to check permissions:', permError);
+          setError('Failed to check notification permissions');
+          return;
+        }
         
         // If already denied, don't prompt again
         if (permissionStatus.receive === 'denied') {
@@ -48,8 +70,15 @@ export const useAdminFCM = () => {
           return;
         }
 
-        // Request permission
-        const permissionResult = await PushNotifications.requestPermissions();
+        // Request permission - wrap in try-catch
+        let permissionResult;
+        try {
+          permissionResult = await PushNotifications.requestPermissions();
+        } catch (reqError) {
+          console.error('Failed to request permissions:', reqError);
+          setError('Failed to request notification permissions');
+          return;
+        }
         
         if (permissionResult.receive !== 'granted') {
           console.log('Push notification permission not granted');
@@ -59,47 +88,62 @@ export const useAdminFCM = () => {
 
         setIsSupported(true);
 
-        // Set up listeners BEFORE calling register()
-        await PushNotifications.addListener('registration', async (token) => {
-          console.log('FCM Token received:', token.value);
+        // Set up listeners BEFORE calling register() - only if not already registered
+        if (!listenersRegistered.current) {
+          listenersRegistered.current = true;
           
-          // Store token in database
           try {
-            const { error: updateError } = await supabase
-              .from('profiles')
-              .update({ fcm_token: token.value })
-              .eq('id', user.id);
-            
-            if (updateError) {
-              console.error('Failed to store FCM token:', updateError);
-              setError('Failed to store token');
-            } else {
-              console.log('FCM token stored successfully');
-              setIsRegistered(true);
-            }
-          } catch (dbError) {
-            console.error('Database error storing FCM token:', dbError);
+            await PushNotifications.addListener('registration', async (token: { value: string }) => {
+              console.log('FCM Token received:', token.value);
+              
+              // Store token in database
+              try {
+                const { error: updateError } = await supabase
+                  .from('profiles')
+                  .update({ fcm_token: token.value })
+                  .eq('id', user.id);
+                
+                if (updateError) {
+                  console.error('Failed to store FCM token:', updateError);
+                  setError('Failed to store token');
+                } else {
+                  console.log('FCM token stored successfully');
+                  setIsRegistered(true);
+                }
+              } catch (dbError) {
+                console.error('Database error storing FCM token:', dbError);
+              }
+            });
+
+            await PushNotifications.addListener('registrationError', (err: { error: string }) => {
+              console.error('FCM registration error:', err);
+              setError(err.error || 'Registration failed');
+            });
+
+            await PushNotifications.addListener('pushNotificationReceived', (notification: any) => {
+              console.log('Push notification received:', notification);
+            });
+
+            await PushNotifications.addListener('pushNotificationActionPerformed', (notification: any) => {
+              console.log('Push notification action performed:', notification);
+              if (notification.notification?.data?.type === 'purchase_request') {
+                window.location.href = '/admin?tab=approvals';
+              }
+            });
+          } catch (listenerError) {
+            console.error('Failed to add listeners:', listenerError);
+            // Continue anyway - registration might still work
           }
-        });
+        }
 
-        await PushNotifications.addListener('registrationError', (err) => {
-          console.error('FCM registration error:', err);
-          setError(err.error || 'Registration failed');
-        });
-
-        await PushNotifications.addListener('pushNotificationReceived', (notification) => {
-          console.log('Push notification received:', notification);
-        });
-
-        await PushNotifications.addListener('pushNotificationActionPerformed', (notification) => {
-          console.log('Push notification action performed:', notification);
-          if (notification.notification.data?.type === 'purchase_request') {
-            window.location.href = '/admin?tab=approvals';
-          }
-        });
-
-        // Now register with APNs/FCM
-        await PushNotifications.register();
+        // Now register with APNs/FCM - wrap in separate try-catch
+        try {
+          await PushNotifications.register();
+        } catch (registerError) {
+          console.error('FCM register() failed:', registerError);
+          setError('Failed to register for push notifications');
+          // Don't crash - this is expected if Firebase is misconfigured
+        }
         
       } catch (err) {
         // Catch any errors to prevent app crash
@@ -109,24 +153,16 @@ export const useAdminFCM = () => {
       }
     };
 
-    // Delay registration slightly to ensure app is fully loaded
+    // Delay registration to ensure app is fully loaded and Firebase is initialized
     const timeoutId = setTimeout(() => {
       registerPushNotifications();
-    }, 1000);
+    }, 2000);
 
     // Cleanup
     return () => {
       clearTimeout(timeoutId);
-      // Only remove listeners if plugin was loaded
-      if (isSupported) {
-        import('@capacitor/push-notifications').then(({ PushNotifications }) => {
-          PushNotifications.removeAllListeners();
-        }).catch(() => {
-          // Ignore cleanup errors
-        });
-      }
     };
-  }, [profile?.role, user, isSupported]);
+  }, [profile?.role, user]);
 
   return { isRegistered, error, isSupported };
 };
