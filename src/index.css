@@ -1,91 +1,120 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=Source+Sans+3:wght@300;400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* SecureReader Design System - Warm, Paper-like Reading Experience */
+/* Premium Medical Publications Design System */
 
 @layer base {
   :root {
-    /* Warm paper background for comfortable reading */
-    --background: 40 30% 98%;
+    /* Deep navy foundation - medical authority & trust */
+    --background: 220 25% 97%;
     --foreground: 222 47% 11%;
 
-    /* Card surfaces with subtle warmth */
-    --card: 40 25% 99%;
+    /* Refined card surfaces */
+    --card: 0 0% 100%;
     --card-foreground: 222 47% 11%;
 
     --popover: 0 0% 100%;
     --popover-foreground: 222 47% 11%;
 
-    /* Deep slate blue - trust and security */
-    --primary: 222 47% 20%;
-    --primary-foreground: 40 30% 98%;
+    /* Deep navy primary - professional authority */
+    --primary: 222 47% 18%;
+    --primary-foreground: 0 0% 98%;
 
-    /* Warm cream secondary */
-    --secondary: 35 30% 94%;
+    /* Warm gold accent - premium exclusivity */
+    --gold: 43 74% 49%;
+    --gold-foreground: 222 47% 11%;
+
+    /* Subtle warm secondary */
+    --secondary: 220 14% 96%;
     --secondary-foreground: 222 47% 11%;
 
-    /* Muted warm gray */
-    --muted: 35 15% 92%;
-    --muted-foreground: 220 10% 45%;
+    /* Refined muted tones */
+    --muted: 220 14% 94%;
+    --muted-foreground: 220 9% 46%;
 
-    /* Accent - warm amber for highlights */
-    --accent: 32 95% 55%;
+    /* Gold accent for premium touches */
+    --accent: 43 74% 49%;
     --accent-foreground: 222 47% 11%;
 
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 35 20% 88%;
-    --input: 35 20% 88%;
-    --ring: 222 47% 20%;
+    /* Refined borders */
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 222 47% 18%;
 
     --radius: 0.75rem;
 
-    /* Reading mode colors */
-    --reader-bg: 40 30% 97%;
-    --reader-text: 222 30% 15%;
-    --watermark: 222 20% 70%;
+    /* Premium reading mode colors */
+    --reader-bg: 40 30% 99%;
+    --reader-text: 222 30% 12%;
+    --watermark: 222 20% 75%;
 
     /* Status colors */
-    --success: 142 76% 36%;
+    --success: 152 76% 36%;
     --warning: 38 92% 50%;
+
+    /* Premium gradients */
+    --gradient-gold: linear-gradient(135deg, hsl(43 74% 49%), hsl(38 72% 55%));
+    --gradient-navy: linear-gradient(135deg, hsl(222 47% 18%), hsl(222 47% 25%));
+    --gradient-premium: linear-gradient(135deg, hsl(222 47% 18%) 0%, hsl(222 40% 25%) 50%, hsl(43 74% 49%) 100%);
+
+    /* Premium shadows */
+    --shadow-sm: 0 1px 2px 0 hsl(222 47% 11% / 0.03);
+    --shadow-md: 0 4px 6px -1px hsl(222 47% 11% / 0.05), 0 2px 4px -2px hsl(222 47% 11% / 0.05);
+    --shadow-lg: 0 10px 15px -3px hsl(222 47% 11% / 0.05), 0 4px 6px -4px hsl(222 47% 11% / 0.05);
+    --shadow-xl: 0 20px 25px -5px hsl(222 47% 11% / 0.05), 0 8px 10px -6px hsl(222 47% 11% / 0.05);
+    --shadow-gold: 0 4px 14px -3px hsl(43 74% 49% / 0.25);
   }
 
   .dark {
-    /* Deep navy background */
-    --background: 222 47% 8%;
-    --foreground: 40 25% 95%;
+    /* Deep sophisticated dark mode */
+    --background: 222 47% 7%;
+    --foreground: 220 20% 95%;
 
-    --card: 222 40% 12%;
-    --card-foreground: 40 25% 95%;
+    --card: 222 40% 10%;
+    --card-foreground: 220 20% 95%;
 
-    --popover: 222 40% 12%;
-    --popover-foreground: 40 25% 95%;
+    --popover: 222 40% 10%;
+    --popover-foreground: 220 20% 95%;
 
-    --primary: 40 30% 95%;
-    --primary-foreground: 222 47% 8%;
+    --primary: 43 65% 55%;
+    --primary-foreground: 222 47% 7%;
 
-    --secondary: 222 35% 18%;
-    --secondary-foreground: 40 25% 95%;
+    --gold: 43 74% 55%;
+    --gold-foreground: 222 47% 7%;
 
-    --muted: 222 30% 20%;
-    --muted-foreground: 220 15% 60%;
+    --secondary: 222 35% 15%;
+    --secondary-foreground: 220 20% 95%;
 
-    --accent: 32 95% 55%;
-    --accent-foreground: 222 47% 8%;
+    --muted: 222 30% 18%;
+    --muted-foreground: 220 15% 55%;
+
+    --accent: 43 74% 55%;
+    --accent-foreground: 222 47% 7%;
 
     --destructive: 0 62% 50%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 222 30% 20%;
-    --input: 222 30% 20%;
-    --ring: 40 30% 90%;
+    --border: 222 30% 18%;
+    --input: 222 30% 18%;
+    --ring: 43 65% 55%;
 
     /* Dark reading mode */
-    --reader-bg: 222 40% 10%;
-    --reader-text: 40 20% 90%;
-    --watermark: 222 15% 40%;
+    --reader-bg: 222 40% 9%;
+    --reader-text: 40 20% 92%;
+    --watermark: 222 15% 35%;
+
+    /* Premium shadows for dark mode */
+    --shadow-sm: 0 1px 2px 0 hsl(0 0% 0% / 0.1);
+    --shadow-md: 0 4px 6px -1px hsl(0 0% 0% / 0.15), 0 2px 4px -2px hsl(0 0% 0% / 0.1);
+    --shadow-lg: 0 10px 15px -3px hsl(0 0% 0% / 0.2), 0 4px 6px -4px hsl(0 0% 0% / 0.1);
+    --shadow-xl: 0 20px 25px -5px hsl(0 0% 0% / 0.25), 0 8px 10px -6px hsl(0 0% 0% / 0.15);
+    --shadow-gold: 0 4px 14px -3px hsl(43 74% 55% / 0.2);
   }
 }
 
@@ -96,14 +125,19 @@
 
   body {
     @apply bg-background text-foreground antialiased;
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-family: 'Source Sans 3', system-ui, -apple-system, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    /* Prevent text selection in app */
     -webkit-user-select: none;
     user-select: none;
-    /* Prevent zoom on input focus in iOS */
     -webkit-text-size-adjust: 100%;
+  }
+
+  /* Premium typography */
+  h1, h2, h3, .font-display {
+    font-family: 'Playfair Display', Georgia, serif;
+    font-weight: 600;
+    letter-spacing: -0.01em;
   }
 
   /* Safe area insets for notched devices */
@@ -125,6 +159,15 @@
 }
 
 @layer utilities {
+  /* Premium font utilities */
+  .font-display {
+    font-family: 'Playfair Display', Georgia, serif;
+  }
+
+  .font-body {
+    font-family: 'Source Sans 3', system-ui, -apple-system, sans-serif;
+  }
+
   /* Reading surface */
   .reader-surface {
     @apply bg-[hsl(var(--reader-bg))] text-[hsl(var(--reader-text))];
@@ -132,19 +175,72 @@
 
   /* Watermark styling */
   .watermark {
-    @apply text-[hsl(var(--watermark))] opacity-30 pointer-events-none select-none;
+    @apply text-[hsl(var(--watermark))] opacity-25 pointer-events-none select-none;
   }
 
-  /* Disable screenshots hint (visual only, actual blocking in native) */
+  /* Disable screenshots hint */
   .secure-content {
     -webkit-touch-callout: none;
     -webkit-user-select: none;
     user-select: none;
   }
 
-  /* Glass effect for overlays */
+  /* Premium glass effect */
   .glass {
-    @apply bg-card/80 backdrop-blur-lg;
+    @apply bg-card/85 backdrop-blur-xl border border-border/50;
+  }
+
+  /* Premium card styling */
+  .premium-card {
+    @apply bg-card rounded-xl border border-border/80 shadow-[var(--shadow-md)];
+    @apply transition-all duration-300;
+  }
+
+  .premium-card:hover {
+    @apply shadow-[var(--shadow-lg)] border-border;
+  }
+
+  /* Gold accent utilities */
+  .text-gold {
+    color: hsl(var(--gold));
+  }
+
+  .bg-gold {
+    background-color: hsl(var(--gold));
+  }
+
+  .border-gold {
+    border-color: hsl(var(--gold));
+  }
+
+  /* Premium gradient backgrounds */
+  .gradient-gold {
+    background: var(--gradient-gold);
+  }
+
+  .gradient-navy {
+    background: var(--gradient-navy);
+  }
+
+  .gradient-premium {
+    background: var(--gradient-premium);
+  }
+
+  /* Premium badge styling */
+  .badge-premium {
+    @apply inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium;
+    @apply bg-gradient-to-r from-[hsl(43_74%_49%)] to-[hsl(38_72%_55%)] text-[hsl(222_47%_11%)];
+    box-shadow: var(--shadow-gold);
+  }
+
+  .badge-owned {
+    @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold;
+    @apply bg-[hsl(var(--success)/0.1)] text-[hsl(var(--success))] border border-[hsl(var(--success)/0.2)];
+  }
+
+  .badge-pending {
+    @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium;
+    @apply bg-[hsl(var(--warning)/0.1)] text-[hsl(var(--warning))] border border-[hsl(var(--warning)/0.2)];
   }
 
   /* Smooth scroll */
@@ -153,7 +249,7 @@
     -webkit-overflow-scrolling: touch;
   }
 
-  /* Hide scrollbar but keep functionality */
+  /* Hide scrollbar */
   .scrollbar-hide {
     -ms-overflow-style: none;
     scrollbar-width: none;
@@ -162,4 +258,68 @@
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
   }
+
+  /* Premium divider */
+  .divider-premium {
+    @apply h-px w-full bg-gradient-to-r from-transparent via-border to-transparent;
+  }
+
+  /* Subtle text gradient */
+  .text-gradient-gold {
+    background: linear-gradient(135deg, hsl(43 74% 49%), hsl(38 72% 60%));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+}
+
+/* Premium animations */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.animate-shimmer {
+  background: linear-gradient(
+    90deg,
+    hsl(var(--muted)) 0%,
+    hsl(var(--card)) 50%,
+    hsl(var(--muted)) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2s ease-in-out infinite;
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-up {
+  animation: fade-up 0.5s ease-out forwards;
+}
+
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-scale-in {
+  animation: scale-in 0.3s ease-out forwards;
 }
