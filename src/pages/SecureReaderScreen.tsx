@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { X, Loader2, AlertTriangle, ZoomIn, ZoomOut, Menu } from 'lucide-react';
+import { X, Loader2, AlertTriangle, ZoomIn, ZoomOut, Menu, BookOpen } from 'lucide-react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -20,7 +20,6 @@ import { usePrivacyScreen } from '@/hooks/usePrivacyScreen';
 import { useScrollPageDetection } from '@/hooks/useScrollPageDetection';
 import { usePdfOutline } from '@/hooks/usePdfOutline';
 
-// Set up PDF.js worker
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
 interface ContentDetails {
@@ -44,10 +43,7 @@ export default function SecureReaderScreen() {
   const contentRef = useRef<HTMLDivElement>(null);
   const pdfWrapperRef = useRef<HTMLDivElement>(null);
   
-  // Security monitoring for iOS screenshot/recording detection
   const { isRecording, screenshotDetected, clearScreenshotAlert } = useSecurityMonitor();
-  
-  // Privacy screen protection - ENABLED for security
   usePrivacyScreen(true);
   
   const [content, setContent] = useState<ContentDetails | null>(null);
@@ -66,7 +62,6 @@ export default function SecureReaderScreen() {
   const [pdfDocument, setPdfDocument] = useState<any>(null);
   const [showToc, setShowToc] = useState(false);
 
-  // Scroll-based page detection
   const { 
     containerRef: scrollContainerRef, 
     registerPage, 
@@ -77,7 +72,6 @@ export default function SecureReaderScreen() {
     enabled: numPages > 0,
   });
 
-  // Reading progress hook
   const {
     savedProgress,
     isLoading: isProgressLoading,
@@ -90,7 +84,6 @@ export default function SecureReaderScreen() {
     totalPages: numPages,
   });
 
-  // Pinch-to-zoom hook - returns transform state and controls
   const { transform, zoomIn, zoomOut, resetZoom, scale } = usePinchZoom({
     minScale: 0.5,
     maxScale: 4,
@@ -100,15 +93,12 @@ export default function SecureReaderScreen() {
 
   const pageWidth = baseWidth;
 
-  // Initialize to saved page after progress is loaded
   useEffect(() => {
     if (!isProgressLoading && savedProgress && !hasInitializedPage && numPages > 0) {
-      // Don't auto-navigate, let user decide via resume prompt
       setHasInitializedPage(true);
     }
   }, [isProgressLoading, savedProgress, hasInitializedPage, numPages]);
 
-  // Track recent pages
   useEffect(() => {
     if (currentPage > 0 && hasInitializedPage) {
       setRecentPages((prev) => {
@@ -118,14 +108,12 @@ export default function SecureReaderScreen() {
     }
   }, [currentPage, hasInitializedPage]);
 
-  // Save progress when page changes
   useEffect(() => {
     if (currentPage > 0 && numPages > 0 && hasInitializedPage) {
       saveProgress(currentPage);
     }
   }, [currentPage, numPages, saveProgress, hasInitializedPage]);
 
-  // Save progress on unmount
   useEffect(() => {
     return () => {
       if (currentPage > 0 && numPages > 0) {
@@ -134,7 +122,6 @@ export default function SecureReaderScreen() {
     };
   }, [currentPage, numPages, saveProgressImmediate]);
 
-  // Prevent all copy/paste/context menu
   useEffect(() => {
     const preventActions = (e: Event) => {
       e.preventDefault();
@@ -142,7 +129,6 @@ export default function SecureReaderScreen() {
     };
 
     const preventKeyboard = (e: KeyboardEvent) => {
-      // Block Ctrl+C, Ctrl+V, Ctrl+P, Ctrl+S, PrintScreen
       if (
         (e.ctrlKey && ['c', 'v', 'p', 's', 'a'].includes(e.key.toLowerCase())) ||
         e.key === 'PrintScreen'
@@ -171,7 +157,6 @@ export default function SecureReaderScreen() {
     };
   }, []);
 
-  // Handle resize
   useEffect(() => {
     const handleResize = () => {
       if (containerRef.current) {
@@ -186,7 +171,6 @@ export default function SecureReaderScreen() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Check content access first
   useEffect(() => {
     const checkContentAccess = async () => {
       if (!id || !profile) {
@@ -195,14 +179,12 @@ export default function SecureReaderScreen() {
       }
 
       try {
-        // Admins have access to all content
         if (profile.role === 'admin') {
           setHasAccess(true);
           setCheckingAccess(false);
           return;
         }
 
-        // Check user_content_access table for regular users
         const { data: access, error: accessError } = await supabase
           .from('user_content_access')
           .select('id')
@@ -237,7 +219,6 @@ export default function SecureReaderScreen() {
     checkContentAccess();
   }, [id, profile]);
 
-  // Fetch content via edge function (only after access is confirmed)
   useEffect(() => {
     if (checkingAccess || !hasAccess) return;
 
@@ -279,7 +260,6 @@ export default function SecureReaderScreen() {
 
         if (data.error) {
           if (data.code === 'DEVICE_MISMATCH') {
-            // Session hijacked - force logout
             await signOut();
             navigate('/login', { replace: true });
             return;
@@ -307,14 +287,12 @@ export default function SecureReaderScreen() {
     fetchSecureContent();
   }, [id, signOut, navigate, checkingAccess, hasAccess]);
 
-  // PDF Outline hook for table of contents
   const { outline, hasOutline } = usePdfOutline(pdfDocument);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const onDocumentLoadSuccess = useCallback(({ numPages: pages }: { numPages: number }, doc?: any) => {
     setNumPages(pages);
     setHasInitializedPage(true);
-    // Store the PDF document for outline extraction
     if (doc) {
       setPdfDocument(doc);
     }
@@ -328,7 +306,6 @@ export default function SecureReaderScreen() {
 
   const handleResume = useCallback(() => {
     if (savedProgress) {
-      // Use setTimeout to ensure pages are rendered before scrolling
       setTimeout(() => {
         scrollToPage(savedProgress.currentPage, 'smooth');
       }, 100);
@@ -342,7 +319,6 @@ export default function SecureReaderScreen() {
   }, [dismissResumePrompt, scrollToPage]);
 
   const handleClose = useCallback(() => {
-    // Save progress before closing
     if (currentPage > 0 && numPages > 0) {
       saveProgressImmediate(currentPage);
     }
@@ -352,12 +328,18 @@ export default function SecureReaderScreen() {
   if (loading) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-background px-6 safe-top safe-bottom">
-        <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
-        <p className="text-muted-foreground mb-4">Loading document...</p>
-        <div className="w-48">
-          <Progress value={loadingProgress} className="h-2" />
+        <div className="relative mb-6">
+          <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-primary shadow-[var(--shadow-lg)]">
+            <BookOpen className="h-10 w-10 text-primary-foreground" />
+          </div>
+          <div className="absolute -bottom-1 -right-1 h-6 w-6 rounded-lg bg-gradient-to-br from-[hsl(43_74%_49%)] to-[hsl(38_72%_55%)]" />
         </div>
-        <p className="text-xs text-muted-foreground mt-2">{loadingProgress}%</p>
+        <p className="font-display text-lg font-semibold text-foreground mb-2">Loading Publication</p>
+        <p className="text-sm text-muted-foreground mb-6">Preparing secure content...</p>
+        <div className="w-48">
+          <Progress value={loadingProgress} className="h-1.5" />
+        </div>
+        <p className="text-xs text-muted-foreground mt-3">{loadingProgress}%</p>
       </div>
     );
   }
@@ -365,11 +347,13 @@ export default function SecureReaderScreen() {
   if (error) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-background px-6 safe-top safe-bottom">
-        <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
-        <p className="text-center text-muted-foreground mb-4">{error}</p>
+        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-destructive/10 mb-5">
+          <AlertTriangle className="h-8 w-8 text-destructive" />
+        </div>
+        <p className="text-center text-muted-foreground mb-6 max-w-xs">{error}</p>
         <button
           onClick={handleClose}
-          className="text-sm font-medium text-primary hover:underline"
+          className="px-6 py-3 bg-primary text-primary-foreground rounded-xl font-medium text-sm shadow-[var(--shadow-md)] hover:shadow-[var(--shadow-lg)] transition-all"
         >
           Return to Library
         </button>
@@ -387,20 +371,17 @@ export default function SecureReaderScreen() {
         WebkitTouchCallout: 'none',
         WebkitUserSelect: 'none',
         userSelect: 'none',
-        height: '100dvh', // Use dynamic viewport height for mobile
+        height: '100dvh',
       }}
     >
-      {/* Scroll Progress Bar */}
       <ScrollProgressBar currentPage={currentPage} totalPages={numPages} />
 
-      {/* Security Warning Overlay (iOS) */}
       <SecurityWarning
         isRecording={isRecording}
         screenshotDetected={screenshotDetected}
         onDismiss={clearScreenshotAlert}
       />
 
-      {/* Resume Reading Toast */}
       <ResumeReadingToast
         show={showResumePrompt && numPages > 0}
         savedPage={savedProgress?.currentPage ?? 1}
@@ -410,7 +391,6 @@ export default function SecureReaderScreen() {
         onDismiss={dismissResumePrompt}
       />
 
-      {/* Go to Page Dialog */}
       <GoToPageDialog
         open={showGoToDialog}
         onOpenChange={setShowGoToDialog}
@@ -420,7 +400,6 @@ export default function SecureReaderScreen() {
         recentPages={recentPages}
       />
 
-      {/* Table of Contents Sidebar */}
       <TableOfContents
         isOpen={showToc}
         onClose={() => setShowToc(false)}
@@ -430,26 +409,27 @@ export default function SecureReaderScreen() {
         hasOutline={hasOutline}
       />
 
-      {/* Header */}
-      <header className="sticky top-0 z-30 glass border-b border-border px-4 py-3">
+      {/* Premium Reader Header */}
+      <header className="sticky top-0 z-30 glass border-b border-border/50 px-4 py-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowToc(true)}
-              className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-secondary transition-colors"
+              className="flex h-10 w-10 items-center justify-center rounded-xl hover:bg-secondary transition-colors"
               title="Table of Contents"
             >
               <Menu className="h-5 w-5 text-foreground" />
             </button>
             <button
               onClick={handleClose}
-              className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-secondary transition-colors"
+              className="flex h-10 w-10 items-center justify-center rounded-xl hover:bg-secondary transition-colors"
             >
               <X className="h-5 w-5 text-foreground" />
             </button>
           </div>
+          
           <div className="text-center flex-1 mx-4">
-            <h1 className="line-clamp-1 text-sm font-medium text-foreground">
+            <h1 className="line-clamp-1 font-display text-base font-semibold text-foreground">
               {content?.title}
             </h1>
             <button
@@ -460,19 +440,19 @@ export default function SecureReaderScreen() {
             </button>
           </div>
           
-          {/* Zoom Controls in Header */}
-          <div className="flex items-center gap-1">
+          {/* Refined Zoom Controls */}
+          <div className="flex items-center gap-1 bg-muted/50 rounded-xl p-1">
             <button
               onClick={zoomOut}
               disabled={scale <= 0.5}
-              className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-secondary disabled:opacity-30 transition-all"
+              className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-card disabled:opacity-30 transition-all"
               title="Zoom out"
             >
               <ZoomOut className="h-4 w-4 text-foreground" />
             </button>
             <button
               onClick={resetZoom}
-              className="px-2 py-1 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors min-w-[3rem]"
+              className="px-2 py-1 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors min-w-[3rem] rounded-lg hover:bg-card"
               title="Reset zoom"
             >
               {Math.round(scale * 100)}%
@@ -480,7 +460,7 @@ export default function SecureReaderScreen() {
             <button
               onClick={zoomIn}
               disabled={scale >= 4}
-              className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-secondary disabled:opacity-30 transition-all"
+              className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-card disabled:opacity-30 transition-all"
               title="Zoom in"
             >
               <ZoomIn className="h-4 w-4 text-foreground" />
@@ -489,28 +469,25 @@ export default function SecureReaderScreen() {
         </div>
       </header>
 
-      {/* PDF Viewer with Watermark - Continuous Scroll */}
+      {/* PDF Viewer */}
       <main 
         ref={contentRef}
         className="relative flex-1 overflow-hidden"
       >
-        {/* Enhanced Watermark */}
         <Watermark sessionId={sessionId} />
         
-        {/* Floating Page Indicator - appears when scrolling */}
         <FloatingPageIndicator 
           currentPage={currentPage} 
           totalPages={numPages} 
           containerRef={scrollContainerRef}
         />
         
-        {/* Scrollable PDF Container */}
         <div 
           ref={scrollContainerRef}
           className="h-full overflow-y-auto overflow-x-hidden"
           style={{
             pointerEvents: 'auto',
-            touchAction: scale > 1 ? 'none' : 'pan-y', // Allow vertical scroll when not zoomed
+            touchAction: scale > 1 ? 'none' : 'pan-y',
           }}
         >
           <div
@@ -528,19 +505,18 @@ export default function SecureReaderScreen() {
                 onLoadSuccess={(loadedDoc) => onDocumentLoadSuccess({ numPages: loadedDoc.numPages }, loadedDoc)}
                 loading={
                   <div className="flex flex-col items-center justify-center py-20">
-                    <Loader2 className="h-8 w-8 animate-spin text-primary mb-2" />
-                    <p className="text-sm text-muted-foreground">Loading PDF...</p>
+                    <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
+                    <p className="text-sm text-muted-foreground">Loading document...</p>
                   </div>
                 }
                 error={
                   <div className="flex flex-col items-center justify-center py-20">
-                    <AlertTriangle className="h-8 w-8 text-destructive mb-2" />
+                    <AlertTriangle className="h-8 w-8 text-destructive mb-3" />
                     <p className="text-muted-foreground">Failed to load document</p>
-                    <p className="text-xs text-muted-foreground mt-1">The file may be too large or corrupted</p>
+                    <p className="text-xs text-muted-foreground mt-1">The file may be corrupted</p>
                   </div>
                 }
               >
-                {/* Render all pages for continuous scrolling */}
                 {Array.from({ length: numPages }, (_, index) => {
                   const pageNumber = index + 1;
                   return (
@@ -555,7 +531,7 @@ export default function SecureReaderScreen() {
                         width={pageWidth}
                         renderTextLayer={false}
                         renderAnnotationLayer={false}
-                        className="shadow-lg rounded-sm"
+                        className="shadow-[var(--shadow-lg)] rounded-sm"
                         loading={
                           <div 
                             className="flex items-center justify-center bg-muted/30 rounded-sm"

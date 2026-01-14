@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Upload, Loader2, ImageIcon, X, CreditCard, CheckCircle } from 'lucide-react';
+import { Upload, Loader2, ImageIcon, X, CheckCircle, CreditCard, Shield, Sparkles } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -91,7 +91,6 @@ export function PurchaseDialog({ content, onClose, onPurchaseSubmitted }: Purcha
 
     setUploading(true);
     try {
-      // Upload payment proof
       const fileExt = selectedFile.name.split('.').pop();
       const fileName = `${user.id}/${content.id}_${Date.now()}.${fileExt}`;
 
@@ -101,7 +100,6 @@ export function PurchaseDialog({ content, onClose, onPurchaseSubmitted }: Purcha
 
       if (uploadError) throw uploadError;
 
-      // Create purchase request
       const { data: requestData, error: requestError } = await supabase
         .from('purchase_requests')
         .insert({
@@ -113,12 +111,10 @@ export function PurchaseDialog({ content, onClose, onPurchaseSubmitted }: Purcha
         .single();
 
       if (requestError) {
-        // If insert fails, clean up uploaded file
         await supabase.storage.from('payment-proofs').remove([fileName]);
         throw requestError;
       }
 
-      // Send push notification to admins (don't block on failure)
       try {
         const { data: userData } = await supabase
           .from('profiles')
@@ -139,14 +135,12 @@ export function PurchaseDialog({ content, onClose, onPurchaseSubmitted }: Purcha
           },
         });
       } catch (notifError) {
-        // Log but don't fail the purchase submission
         console.log('Push notification failed (non-critical):', notifError);
       }
 
       setSubmitted(true);
       toast({ title: 'Success', description: 'Purchase request submitted! Waiting for admin approval.' });
       
-      // Close after a short delay
       setTimeout(() => {
         onPurchaseSubmitted();
         onClose();
@@ -172,47 +166,61 @@ export function PurchaseDialog({ content, onClose, onPurchaseSubmitted }: Purcha
 
   return (
     <Dialog open={!!content} onOpenChange={handleClose}>
-      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <CreditCard className="h-5 w-5 text-primary" />
-            Purchase Book
-          </DialogTitle>
-          <DialogDescription>
-            Complete the payment to access "{content.title}"
-          </DialogDescription>
-        </DialogHeader>
+      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto rounded-2xl border-border/80 shadow-[var(--shadow-xl)] p-0">
+        {/* Premium Header */}
+        <div className="relative px-6 pt-6 pb-4">
+          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-[hsl(43_74%_49%)] to-[hsl(38_72%_55%)]" />
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-3 font-display text-xl">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary shadow-[var(--shadow-sm)]">
+                <CreditCard className="h-5 w-5 text-primary-foreground" />
+              </div>
+              Acquire Publication
+            </DialogTitle>
+            <DialogDescription className="text-muted-foreground mt-1">
+              Complete payment to access "<span className="font-medium text-foreground">{content.title}</span>"
+            </DialogDescription>
+          </DialogHeader>
+        </div>
 
         {submitted ? (
-          <div className="flex flex-col items-center py-8 text-center">
-            <div className="h-16 w-16 rounded-full bg-green-100 flex items-center justify-center mb-4">
-              <CheckCircle className="h-8 w-8 text-green-600" />
+          <div className="flex flex-col items-center py-12 px-6 text-center">
+            <div className="relative mb-6">
+              <div className="h-20 w-20 rounded-full bg-gradient-to-br from-[hsl(var(--success)/0.15)] to-[hsl(var(--success)/0.05)] flex items-center justify-center border border-[hsl(var(--success)/0.3)]">
+                <CheckCircle className="h-10 w-10 text-[hsl(var(--success))]" />
+              </div>
+              <Sparkles className="absolute -top-1 -right-1 h-6 w-6 text-[hsl(43_74%_49%)]" />
             </div>
-            <h3 className="text-lg font-semibold text-foreground">Request Submitted!</h3>
-            <p className="text-sm text-muted-foreground mt-2">
-              Your purchase request has been sent to the admin for approval.
-              You'll be notified once it's approved.
+            <h3 className="font-display text-xl font-semibold text-foreground">Request Submitted</h3>
+            <p className="text-sm text-muted-foreground mt-3 leading-relaxed max-w-xs">
+              Your acquisition request has been sent for review. You'll be notified once approved.
             </p>
           </div>
         ) : (
-          <div className="space-y-4">
-            {/* Price */}
-            <div className="rounded-lg bg-primary/10 p-4 text-center">
-              <p className="text-sm text-muted-foreground">Amount to Pay</p>
-              <p className="text-3xl font-bold text-primary">₹{content.price}</p>
+          <div className="px-6 pb-6 space-y-5">
+            {/* Premium Price Display */}
+            <div className="relative rounded-2xl bg-gradient-to-br from-primary/5 to-primary/10 border border-primary/20 p-5 text-center overflow-hidden">
+              <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-br from-[hsl(43_74%_49%/0.1)] to-transparent rounded-full -translate-y-1/2 translate-x-1/2" />
+              <p className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Amount</p>
+              <p className="text-4xl font-display font-bold text-foreground mt-1">
+                ₹{content.price.toLocaleString()}
+              </p>
             </div>
 
             {/* Bank Details */}
             <div>
-              <h4 className="text-sm font-medium mb-2">Bank Details</h4>
+              <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                <Shield className="h-4 w-4 text-muted-foreground" />
+                Payment Details
+              </h4>
               {loading ? (
-                <div className="rounded-lg bg-muted p-4">
-                  <div className="h-4 bg-muted-foreground/20 rounded animate-pulse mb-2" />
-                  <div className="h-4 bg-muted-foreground/20 rounded animate-pulse w-3/4" />
+                <div className="rounded-xl bg-muted/50 p-4 border border-border/50">
+                  <div className="h-4 bg-muted rounded animate-shimmer mb-2" />
+                  <div className="h-4 bg-muted rounded animate-shimmer w-3/4" />
                 </div>
               ) : (
-                <div className="rounded-lg bg-muted p-4">
-                  <pre className="text-sm whitespace-pre-wrap font-mono text-foreground">
+                <div className="rounded-xl bg-muted/50 p-4 border border-border/50">
+                  <pre className="text-sm whitespace-pre-wrap font-mono text-foreground leading-relaxed">
                     {bankDetails}
                   </pre>
                 </div>
@@ -221,34 +229,41 @@ export function PurchaseDialog({ content, onClose, onPurchaseSubmitted }: Purcha
 
             {/* Payment Proof Upload */}
             <div>
-              <h4 className="text-sm font-medium mb-2">Upload Payment Screenshot</h4>
-              <p className="text-xs text-muted-foreground mb-2">
-                After making the payment, upload a screenshot as proof
+              <h4 className="text-sm font-semibold mb-2">Payment Confirmation</h4>
+              <p className="text-xs text-muted-foreground mb-3">
+                Upload a screenshot of your completed payment
               </p>
               
               {selectedFile ? (
-                <div className="relative rounded-lg border border-border overflow-hidden">
+                <div className="relative rounded-xl border border-border/80 overflow-hidden shadow-[var(--shadow-sm)]">
                   <img
                     src={previewUrl!}
                     alt="Payment proof preview"
                     className="w-full h-48 object-cover"
                   />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={clearFile}
-                    className="absolute top-2 right-2 h-8 w-8 p-0 bg-background/80 hover:bg-background"
+                    className="absolute top-3 right-3 h-8 w-8 p-0 bg-card/90 hover:bg-card rounded-lg shadow-[var(--shadow-md)]"
                   >
                     <X className="h-4 w-4" />
                   </Button>
+                  <div className="absolute bottom-3 left-3 right-3">
+                    <p className="text-xs text-white/90 truncate font-medium">{selectedFile.name}</p>
+                  </div>
                 </div>
               ) : (
                 <div
                   onClick={() => fileInputRef.current?.click()}
-                  className="flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-border p-6 hover:border-primary hover:bg-secondary/50 transition-colors"
+                  className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-border/80 p-8 hover:border-primary/50 hover:bg-primary/5 transition-all duration-200"
                 >
-                  <ImageIcon className="h-8 w-8 text-muted-foreground mb-2" />
-                  <span className="text-sm text-muted-foreground">Click to upload payment screenshot</span>
+                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-muted mb-3">
+                    <ImageIcon className="h-6 w-6 text-muted-foreground" />
+                  </div>
+                  <span className="text-sm font-medium text-foreground">Upload Screenshot</span>
+                  <span className="text-xs text-muted-foreground mt-1">PNG, JPG up to 10MB</span>
                 </div>
               )}
               <input
@@ -264,23 +279,24 @@ export function PurchaseDialog({ content, onClose, onPurchaseSubmitted }: Purcha
             <Button
               onClick={handleSubmit}
               disabled={!selectedFile || uploading}
-              className="w-full"
+              className="w-full h-12 rounded-xl text-base"
+              variant={selectedFile ? "premium" : "default"}
             >
               {uploading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Submitting...
+                  Processing...
                 </>
               ) : (
                 <>
                   <Upload className="mr-2 h-4 w-4" />
-                  Submit Purchase Request
+                  Submit Request
                 </>
               )}
             </Button>
 
             <p className="text-xs text-center text-muted-foreground">
-              Your request will be reviewed by an admin within 24 hours
+              Requests are typically reviewed within 24 hours
             </p>
           </div>
         )}

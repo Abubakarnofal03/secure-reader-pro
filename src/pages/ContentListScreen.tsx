@@ -1,11 +1,10 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
-import { BookOpen, User, ChevronRight, Library, Lock, Clock, CheckCircle, Store, ShoppingBag, RefreshCw } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { BookOpen, User, ChevronRight, Library, Clock, CheckCircle, Store, RefreshCw, Sparkles, Crown } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { PurchaseDialog } from '@/components/library/PurchaseDialog';
-import { Badge } from '@/components/ui/badge';
 
 interface ContentItem {
   id: string;
@@ -48,7 +47,6 @@ export default function ContentListScreen() {
       setIsRefreshing(true);
     }
     
-    // Fetch all active content
     const { data: contentData, error: contentError } = await supabase
       .from('content')
       .select('id, title, description, file_path, price')
@@ -61,19 +59,16 @@ export default function ContentListScreen() {
       setContent(contentData || []);
     }
 
-    // Fetch user's purchased content
     const { data: accessData } = await supabase
       .from('user_content_access')
       .select('content_id')
       .eq('user_id', user.id);
 
-    // Fetch user's pending/rejected requests
     const { data: requestData } = await supabase
       .from('purchase_requests')
       .select('content_id, status')
       .eq('user_id', user.id);
 
-    // Build status map
     const statusMap: PurchaseStatus = {};
     accessData?.forEach((item) => {
       statusMap[item.content_id] = 'purchased';
@@ -133,17 +128,30 @@ export default function ContentListScreen() {
     const status = purchaseStatus[contentId];
     switch (status) {
       case 'purchased':
-        return <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-500/30"><CheckCircle className="h-3 w-3 mr-1" />Purchased</Badge>;
+        return (
+          <span className="badge-owned">
+            <CheckCircle className="h-3 w-3" />
+            Owned
+          </span>
+        );
       case 'pending':
-        return <Badge variant="outline" className="bg-yellow-500/10 text-yellow-600 border-yellow-500/30"><Clock className="h-3 w-3 mr-1" />Pending</Badge>;
+        return (
+          <span className="badge-pending">
+            <Clock className="h-3 w-3" />
+            Pending
+          </span>
+        );
       case 'rejected':
-        return <Badge variant="outline" className="bg-red-500/10 text-red-600 border-red-500/30">Rejected</Badge>;
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-destructive/10 text-destructive border border-destructive/20">
+            Rejected
+          </span>
+        );
       default:
         return null;
     }
   };
 
-  // Filter content based on active tab
   const myBooks = content.filter((item) => purchaseStatus[item.id] === 'purchased');
   const storeBooks = content;
   const pendingCount = Object.values(purchaseStatus).filter((s) => s === 'pending').length;
@@ -152,64 +160,76 @@ export default function ContentListScreen() {
 
   return (
     <div className="flex min-h-screen flex-col bg-background safe-top safe-bottom">
-      {/* Header */}
-      <header className="sticky top-0 z-10 glass border-b border-border px-4 py-4">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary">
-              <BookOpen className="h-5 w-5 text-primary-foreground" />
+      {/* Premium Header */}
+      <header className="sticky top-0 z-10 glass border-b border-border/50">
+        <div className="px-5 pt-5 pb-4">
+          {/* Top Row */}
+          <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center gap-4">
+              <div className="relative">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary shadow-[var(--shadow-md)]">
+                  <BookOpen className="h-6 w-6 text-primary-foreground" />
+                </div>
+                <div className="absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-md bg-gradient-to-br from-[hsl(43_74%_49%)] to-[hsl(38_72%_55%)]" />
+              </div>
+              <div>
+                <h1 className="font-display text-2xl font-semibold text-foreground">Library</h1>
+                <p className="text-sm text-muted-foreground">
+                  {myBooks.length} publication{myBooks.length !== 1 ? 's' : ''} owned
+                </p>
+              </div>
             </div>
-            <div>
-              <h1 className="font-semibold text-foreground">Library</h1>
-              <p className="text-xs text-muted-foreground">
-                {myBooks.length} owned • {storeBooks.length} available
-              </p>
-            </div>
+            <button
+              onClick={() => navigate('/profile')}
+              className="flex h-11 w-11 items-center justify-center rounded-xl bg-secondary border border-border/50 transition-all hover:bg-secondary/80"
+            >
+              {profile?.role === 'admin' ? (
+                <Crown className="h-5 w-5 text-[hsl(43_74%_49%)]" />
+              ) : (
+                <User className="h-5 w-5 text-muted-foreground" />
+              )}
+            </button>
           </div>
-          <button
-            onClick={() => navigate('/profile')}
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-secondary"
-          >
-            <User className="h-5 w-5 text-secondary-foreground" />
-          </button>
-        </div>
 
-        {/* Tab Switcher */}
-        <div className="flex gap-2">
-          <button
-            onClick={() => setActiveTab('my-books')}
-            className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-medium text-sm transition-all ${
-              activeTab === 'my-books'
-                ? 'bg-primary text-primary-foreground'
-                : 'bg-muted text-muted-foreground hover:bg-muted/80'
-            }`}
-          >
-            <BookOpen className="h-4 w-4" />
-            My Books
-            {myBooks.length > 0 && (
-              <span className={`px-1.5 py-0.5 rounded-full text-xs ${
-                activeTab === 'my-books' ? 'bg-primary-foreground/20' : 'bg-background'
-              }`}>
-                {myBooks.length}
-              </span>
-            )}
-          </button>
-          <button
-            onClick={() => setActiveTab('store')}
-            className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-medium text-sm transition-all ${
-              activeTab === 'store'
-                ? 'bg-primary text-primary-foreground'
-                : 'bg-muted text-muted-foreground hover:bg-muted/80'
-            }`}
-          >
-            <Store className="h-4 w-4" />
-            Store
-            {pendingCount > 0 && (
-              <span className="px-1.5 py-0.5 rounded-full text-xs bg-yellow-500 text-yellow-950">
-                {pendingCount}
-              </span>
-            )}
-          </button>
+          {/* Premium Tab Switcher */}
+          <div className="flex gap-2 p-1 bg-muted/50 rounded-xl">
+            <button
+              onClick={() => setActiveTab('my-books')}
+              className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-medium text-sm transition-all duration-200 ${
+                activeTab === 'my-books'
+                  ? 'bg-card text-foreground shadow-[var(--shadow-md)]'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <BookOpen className="h-4 w-4" />
+              My Publications
+              {myBooks.length > 0 && (
+                <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
+                  activeTab === 'my-books' 
+                    ? 'bg-primary text-primary-foreground' 
+                    : 'bg-muted text-muted-foreground'
+                }`}>
+                  {myBooks.length}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => setActiveTab('store')}
+              className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-medium text-sm transition-all duration-200 ${
+                activeTab === 'store'
+                  ? 'bg-card text-foreground shadow-[var(--shadow-md)]'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <Store className="h-4 w-4" />
+              Catalogue
+              {pendingCount > 0 && (
+                <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-[hsl(var(--warning))] text-[hsl(222_47%_11%)]">
+                  {pendingCount}
+                </span>
+              )}
+            </button>
+          </div>
         </div>
       </header>
 
@@ -234,7 +254,7 @@ export default function ContentListScreen() {
       {/* Content */}
       <main 
         ref={mainRef}
-        className="flex-1 px-4 py-6 overflow-auto"
+        className="flex-1 px-5 py-6 overflow-auto"
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
@@ -242,95 +262,123 @@ export default function ContentListScreen() {
         {loading ? (
           <div className="space-y-4">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="h-24 animate-pulse rounded-xl bg-muted" />
+              <div key={i} className="h-28 animate-shimmer rounded-2xl" />
             ))}
           </div>
         ) : displayedContent.length === 0 ? (
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
             className="flex flex-col items-center justify-center py-20 text-center"
           >
-            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-muted">
-              {activeTab === 'my-books' ? (
-                <ShoppingBag className="h-8 w-8 text-muted-foreground" />
-              ) : (
-                <Library className="h-8 w-8 text-muted-foreground" />
-              )}
+            <div className="relative mb-6">
+              <div className="flex h-20 w-20 items-center justify-center rounded-full bg-secondary">
+                {activeTab === 'my-books' ? (
+                  <Library className="h-10 w-10 text-muted-foreground" />
+                ) : (
+                  <Sparkles className="h-10 w-10 text-muted-foreground" />
+                )}
+              </div>
             </div>
-            <h2 className="text-lg font-semibold text-foreground">
-              {activeTab === 'my-books' ? 'No Books Yet' : 'Store Empty'}
+            <h2 className="font-display text-xl font-semibold text-foreground">
+              {activeTab === 'my-books' ? 'No Publications Yet' : 'Coming Soon'}
             </h2>
-            <p className="mt-2 max-w-xs text-sm text-muted-foreground">
+            <p className="mt-3 max-w-xs text-sm text-muted-foreground leading-relaxed">
               {activeTab === 'my-books'
-                ? "You haven't purchased any books yet. Check out the Store to find great reads!"
-                : 'New books will appear here when published.'}
+                ? "You haven't acquired any publications yet. Browse the catalogue to discover valuable medical resources."
+                : 'New publications will appear here when available.'}
             </p>
             {activeTab === 'my-books' && storeBooks.length > 0 && (
               <button
                 onClick={() => setActiveTab('store')}
-                className="mt-4 px-4 py-2 bg-primary text-primary-foreground rounded-lg font-medium text-sm hover:bg-primary/90 transition-colors"
+                className="mt-6 px-6 py-3 bg-primary text-primary-foreground rounded-xl font-medium text-sm shadow-[var(--shadow-md)] hover:shadow-[var(--shadow-lg)] transition-all"
               >
-                Browse Store
+                Browse Catalogue
               </button>
             )}
           </motion.div>
         ) : (
-          <motion.div 
-            key={activeTab}
-            initial={{ opacity: 0, x: activeTab === 'my-books' ? -20 : 20 }} 
-            animate={{ opacity: 1, x: 0 }} 
-            className="space-y-3"
-          >
-            {displayedContent.map((item, index) => {
-              const status = purchaseStatus[item.id];
-              const isPurchased = status === 'purchased';
-              const isPending = status === 'pending';
-              
-              // In My Books tab, only show purchased - skip if not purchased
-              if (activeTab === 'my-books' && !isPurchased) return null;
-              
-              return (
-                <motion.button
-                  key={item.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.05 }}
-                  onClick={() => handleContentClick(item)}
-                  disabled={isPending}
-                  className={`flex w-full items-center gap-4 rounded-xl bg-card p-4 text-left transition-colors ${
-                    isPending ? 'opacity-70 cursor-not-allowed' : 'hover:bg-secondary'
-                  }`}
-                >
-                  <div className={`flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-lg ${
-                    isPurchased ? 'bg-primary/10' : 'bg-muted'
-                  }`}>
-                    {isPurchased ? (
-                      <BookOpen className="h-6 w-6 text-primary" />
-                    ) : (
-                      <Lock className="h-6 w-6 text-muted-foreground" />
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <h3 className="truncate font-medium text-foreground">{item.title}</h3>
-                    {item.description && (
-                      <p className="mt-1 truncate text-sm text-muted-foreground">{item.description}</p>
-                    )}
-                    <div className="mt-2 flex items-center gap-2">
-                      {activeTab === 'store' && getStatusBadge(item.id)}
-                      {activeTab === 'store' && !status && (
-                        <span className="text-sm font-semibold text-primary">₹{item.price}</span>
-                      )}
-                      {activeTab === 'my-books' && (
-                        <span className="text-xs text-muted-foreground">Tap to read</span>
+          <AnimatePresence mode="wait">
+            <motion.div 
+              key={activeTab}
+              initial={{ opacity: 0, y: 10 }} 
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2 }}
+              className="space-y-4"
+            >
+              {displayedContent.map((item, index) => {
+                const status = purchaseStatus[item.id];
+                const isPurchased = status === 'purchased';
+                const isPending = status === 'pending';
+                
+                if (activeTab === 'my-books' && !isPurchased) return null;
+                
+                return (
+                  <motion.button
+                    key={item.id}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: index * 0.05 }}
+                    onClick={() => handleContentClick(item)}
+                    disabled={isPending}
+                    className={`group flex w-full items-center gap-4 rounded-2xl border bg-card p-5 text-left transition-all duration-300 ${
+                      isPending 
+                        ? 'opacity-60 cursor-not-allowed border-border/50' 
+                        : isPurchased
+                          ? 'border-[hsl(var(--success)/0.2)] hover:border-[hsl(var(--success)/0.4)] hover:shadow-[var(--shadow-lg)]'
+                          : 'border-border/80 hover:border-primary/30 hover:shadow-[var(--shadow-lg)]'
+                    }`}
+                  >
+                    {/* Book Cover Placeholder */}
+                    <div className={`relative flex h-20 w-16 flex-shrink-0 items-center justify-center rounded-xl overflow-hidden ${
+                      isPurchased 
+                        ? 'bg-gradient-to-br from-primary/10 to-primary/5 border border-primary/20' 
+                        : 'bg-gradient-to-br from-muted to-muted/50 border border-border/50'
+                    }`}>
+                      <BookOpen className={`h-7 w-7 ${isPurchased ? 'text-primary' : 'text-muted-foreground'}`} />
+                      {isPurchased && (
+                        <div className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-gradient-to-br from-[hsl(43_74%_49%)] to-[hsl(38_72%_55%)] flex items-center justify-center shadow-[var(--shadow-gold)]">
+                          <CheckCircle className="h-3 w-3 text-[hsl(222_47%_11%)]" />
+                        </div>
                       )}
                     </div>
-                  </div>
-                  <ChevronRight className="h-5 w-5 flex-shrink-0 text-muted-foreground" />
-                </motion.button>
-              );
-            })}
-          </motion.div>
+
+                    {/* Content */}
+                    <div className="min-w-0 flex-1">
+                      <h3 className="font-display text-lg font-semibold text-foreground leading-tight line-clamp-1 group-hover:text-primary transition-colors">
+                        {item.title}
+                      </h3>
+                      {item.description && (
+                        <p className="mt-1.5 text-sm text-muted-foreground line-clamp-2 leading-relaxed">
+                          {item.description}
+                        </p>
+                      )}
+                      <div className="mt-3 flex items-center gap-3">
+                        {activeTab === 'store' && getStatusBadge(item.id)}
+                        {activeTab === 'store' && !status && (
+                          <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-bold bg-primary/10 text-primary">
+                            ₹{item.price}
+                          </span>
+                        )}
+                        {activeTab === 'my-books' && (
+                          <span className="text-xs font-medium text-muted-foreground">
+                            Tap to read
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <ChevronRight className={`h-5 w-5 flex-shrink-0 transition-all ${
+                      isPurchased 
+                        ? 'text-primary group-hover:translate-x-1' 
+                        : 'text-muted-foreground group-hover:text-foreground group-hover:translate-x-1'
+                    }`} />
+                  </motion.button>
+                );
+              })}
+            </motion.div>
+          </AnimatePresence>
         )}
       </main>
 
