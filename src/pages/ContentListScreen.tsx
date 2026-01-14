@@ -380,7 +380,7 @@ export default function ContentListScreen() {
                         {activeTab === 'store' && getStatusBadge(item.id)}
                         {activeTab === 'store' && !status && (
                           <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-bold bg-primary/10 text-primary">
-                            {formatPrice(item.price, item.currency)}
+                            {formatPrice(item.price)}
                           </span>
                         )}
                         {activeTab === 'my-books' && (
