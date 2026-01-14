@@ -14,6 +14,7 @@ import {
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { BookCover } from '@/components/library/BookCover';
+import { formatPrice } from '@/lib/currency';
 
 interface Content {
   id: string;
@@ -23,6 +24,7 @@ interface Content {
   is_active: boolean;
   created_at: string;
   price: number;
+  currency: string;
   cover_url: string | null;
 }
 
@@ -289,7 +291,7 @@ export function ContentList({ onManageAccess, refreshTrigger }: ContentListProps
               )}
               <div className="mt-1.5 flex items-center gap-2 flex-wrap">
                 <span className="inline-flex items-center rounded-full bg-primary/10 text-primary px-2 py-0.5 text-xs font-medium">
-                  ₹{content.price}
+                  {formatPrice(content.price, content.currency)}
                 </span>
                 <span
                   className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
