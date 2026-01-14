@@ -4,6 +4,7 @@ interface BookCoverProps {
   coverUrl?: string | null;
   title: string;
   isOwned?: boolean;
+  progress?: number; // 0-100 percentage
   size?: 'sm' | 'md' | 'lg';
   className?: string;
 }
@@ -20,7 +21,10 @@ const iconSizes = {
   lg: 'h-10 w-10',
 };
 
-export function BookCover({ coverUrl, title, isOwned = false, size = 'md', className = '' }: BookCoverProps) {
+export function BookCover({ coverUrl, title, isOwned = false, progress, size = 'md', className = '' }: BookCoverProps) {
+  const showProgress = isOwned && typeof progress === 'number' && progress > 0 && progress < 100;
+  const isComplete = isOwned && progress === 100;
+
   return (
     <div 
       className={`relative flex-shrink-0 rounded-xl overflow-hidden ${sizeClasses[size]} ${className}`}
@@ -56,10 +60,31 @@ export function BookCover({ coverUrl, title, isOwned = false, size = 'md', class
         </div>
       )}
       
-      {/* Premium owned badge */}
-      {isOwned && (
-        <div className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-gradient-to-br from-[hsl(43_74%_49%)] to-[hsl(38_72%_55%)] flex items-center justify-center shadow-[var(--shadow-gold)]">
+      {/* Reading progress bar at bottom */}
+      {showProgress && (
+        <div className="absolute bottom-0 left-0 right-0 h-1.5 bg-black/30">
+          <div 
+            className="h-full bg-gradient-to-r from-[hsl(var(--gold))] to-[hsl(38_72%_55%)] transition-all duration-300"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+      )}
+
+      {/* Completion badge or owned badge */}
+      {isComplete ? (
+        <div className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-gradient-to-br from-[hsl(var(--success))] to-[hsl(152_70%_40%)] flex items-center justify-center shadow-[var(--shadow-sm)]">
+          <CheckCircle className="h-3 w-3 text-white" />
+        </div>
+      ) : isOwned && !showProgress ? (
+        <div className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-gradient-to-br from-[hsl(var(--gold))] to-[hsl(38_72%_55%)] flex items-center justify-center shadow-[var(--shadow-gold)]">
           <CheckCircle className="h-3 w-3 text-[hsl(222_47%_11%)] dark:text-[hsl(0_0%_0%)]" />
+        </div>
+      ) : null}
+
+      {/* Progress percentage label */}
+      {showProgress && size !== 'sm' && (
+        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 px-1.5 py-0.5 rounded bg-black/60 backdrop-blur-sm">
+          <span className="text-[10px] font-medium text-white">{Math.round(progress)}%</span>
         </div>
       )}
       
