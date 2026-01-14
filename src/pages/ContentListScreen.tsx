@@ -21,6 +21,10 @@ interface PurchaseStatus {
   [contentId: string]: 'purchased' | 'pending' | 'rejected' | null;
 }
 
+interface ReadingProgress {
+  [contentId: string]: number; // percentage 0-100
+}
+
 type TabType = 'my-books' | 'store';
 
 export default function ContentListScreen() {
@@ -29,6 +33,7 @@ export default function ContentListScreen() {
   const [content, setContent] = useState<ContentItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [purchaseStatus, setPurchaseStatus] = useState<PurchaseStatus>({});
+  const [readingProgress, setReadingProgress] = useState<ReadingProgress>({});
   const [selectedContent, setSelectedContent] = useState<ContentItem | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('my-books');
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -72,6 +77,12 @@ export default function ContentListScreen() {
       .select('content_id, status')
       .eq('user_id', user.id);
 
+    // Fetch reading progress
+    const { data: progressData } = await supabase
+      .from('reading_progress')
+      .select('content_id, current_page, total_pages')
+      .eq('user_id', user.id);
+
     const statusMap: PurchaseStatus = {};
     accessData?.forEach((item) => {
       statusMap[item.content_id] = 'purchased';
@@ -82,6 +93,16 @@ export default function ContentListScreen() {
       }
     });
     setPurchaseStatus(statusMap);
+
+    // Calculate reading progress percentages
+    const progressMap: ReadingProgress = {};
+    progressData?.forEach((item) => {
+      if (item.total_pages && item.total_pages > 0) {
+        progressMap[item.content_id] = Math.round((item.current_page / item.total_pages) * 100);
+      }
+    });
+    setReadingProgress(progressMap);
+
     setLoading(false);
     setIsRefreshing(false);
   }, [user]);
@@ -339,6 +360,7 @@ export default function ContentListScreen() {
                       coverUrl={item.cover_url} 
                       title={item.title} 
                       isOwned={isPurchased}
+                      progress={readingProgress[item.id]}
                       size="md"
                     />
 
