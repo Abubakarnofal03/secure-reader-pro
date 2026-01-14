@@ -51,6 +51,7 @@ export default function SecureReaderScreen() {
   const [content, setContent] = useState<ContentDetails | null>(null);
   const [numPages, setNumPages] = useState<number>(0);
   const [loading, setLoading] = useState(true);
+  const [checkingAccess, setCheckingAccess] = useState(true);
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [baseWidth, setBaseWidth] = useState(window.innerWidth - 32);
@@ -58,6 +59,7 @@ export default function SecureReaderScreen() {
   const [showGoToDialog, setShowGoToDialog] = useState(false);
   const [recentPages, setRecentPages] = useState<number[]>([]);
   const [hasInitializedPage, setHasInitializedPage] = useState(false);
+  const [hasAccess, setHasAccess] = useState(false);
 
   // Scroll-based page detection
   const { 
@@ -179,8 +181,61 @@ export default function SecureReaderScreen() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Fetch content via edge function
+  // Check content access first
   useEffect(() => {
+    const checkContentAccess = async () => {
+      if (!id || !profile) {
+        setCheckingAccess(false);
+        return;
+      }
+
+      try {
+        // Admins have access to all content
+        if (profile.role === 'admin') {
+          setHasAccess(true);
+          setCheckingAccess(false);
+          return;
+        }
+
+        // Check user_content_access table for regular users
+        const { data: access, error: accessError } = await supabase
+          .from('user_content_access')
+          .select('id')
+          .eq('user_id', profile.id)
+          .eq('content_id', id)
+          .maybeSingle();
+
+        if (accessError) {
+          console.error('Error checking access:', accessError);
+          setError('Failed to verify content access');
+          setCheckingAccess(false);
+          return;
+        }
+
+        if (!access) {
+          setError('You have not purchased this content. Please purchase it from the library to access.');
+          setHasAccess(false);
+          setCheckingAccess(false);
+          setLoading(false);
+          return;
+        }
+
+        setHasAccess(true);
+        setCheckingAccess(false);
+      } catch (err) {
+        console.error('Access check error:', err);
+        setError('Failed to verify content access');
+        setCheckingAccess(false);
+      }
+    };
+
+    checkContentAccess();
+  }, [id, profile]);
+
+  // Fetch content via edge function (only after access is confirmed)
+  useEffect(() => {
+    if (checkingAccess || !hasAccess) return;
+
     const fetchSecureContent = async () => {
       if (!id) {
         setError('No content ID provided');
@@ -245,7 +300,7 @@ export default function SecureReaderScreen() {
     };
 
     fetchSecureContent();
-  }, [id, signOut, navigate]);
+  }, [id, signOut, navigate, checkingAccess, hasAccess]);
 
   const onDocumentLoadSuccess = useCallback(({ numPages }: { numPages: number }) => {
     setNumPages(numPages);
