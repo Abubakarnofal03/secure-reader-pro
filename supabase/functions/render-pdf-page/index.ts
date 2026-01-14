@@ -58,7 +58,7 @@ serve(async (req) => {
     // Validate device ID matches the one in profile
     const { data: profile, error: profileError } = await supabaseClient
       .from("profiles")
-      .select("active_device_id, has_access, email, name")
+      .select("active_device_id, email, name, role")
       .eq("id", user.id)
       .single();
 
@@ -66,14 +66,6 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({ error: "Profile not found" }),
         { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // Check if user has access
-    if (!profile.has_access) {
-      return new Response(
-        JSON.stringify({ error: "Access not granted" }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
@@ -85,11 +77,11 @@ serve(async (req) => {
       );
     }
 
-    // Check if user has access to this content (via RLS or admin role check)
+    // Check if user has access to this content (admin or via user_content_access)
     const adminClient = createClient(supabaseUrl, supabaseServiceKey);
     
-    // Check if user is admin
-    const { data: isAdmin } = await adminClient.rpc("is_admin", { user_id: user.id });
+    // Check if user is admin (role-based check)
+    const isAdmin = profile.role === 'admin';
 
     if (!isAdmin) {
       // Check user_content_access table
