@@ -81,15 +81,33 @@ export function usePinchZoom({
   // Store initial content dimensions once set
   const initialContentSize = useRef<{ width: number; height: number } | null>(null);
   const contentInitialized = useRef(false);
+  const listenersAttached = useRef(false);
+
+  // Force re-initialization when scale changes from button interaction
+  const forceInit = useCallback(() => {
+    const content = contentRef.current;
+    if (!content) return;
+    
+    const rect = content.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+      // Account for current scale when capturing initial size
+      const currentScale = transform.scale || 1;
+      initialContentSize.current = {
+        width: rect.width / currentScale,
+        height: rect.height / currentScale,
+      };
+      contentInitialized.current = true;
+    }
+  }, [contentRef, transform.scale]);
 
   // Initialize content size on mount/content change
   useEffect(() => {
     const content = contentRef.current;
-    if (!content || contentInitialized.current) return;
+    if (!content) return;
     
     const initContentSize = () => {
       const rect = content.getBoundingClientRect();
-      if (rect.width > 0 && rect.height > 0) {
+      if (rect.width > 0 && rect.height > 0 && !contentInitialized.current) {
         initialContentSize.current = {
           width: rect.width,
           height: rect.height,
@@ -101,16 +119,30 @@ export function usePinchZoom({
     // Try immediately
     initContentSize();
     
+    // Also try after a short delay (for dynamically loaded content like PDFs)
+    const timeoutId = setTimeout(initContentSize, 500);
+    
     // Also observe for changes if not ready yet
-    if (!contentInitialized.current) {
-      const observer = new ResizeObserver(() => {
-        if (!contentInitialized.current) {
-          initContentSize();
-        }
-      });
-      observer.observe(content);
-      return () => observer.disconnect();
-    }
+    const observer = new ResizeObserver(() => {
+      if (!contentInitialized.current) {
+        initContentSize();
+      }
+    });
+    observer.observe(content);
+    
+    // Also observe mutations (new children added)
+    const mutationObserver = new MutationObserver(() => {
+      if (!contentInitialized.current) {
+        initContentSize();
+      }
+    });
+    mutationObserver.observe(content, { childList: true, subtree: true });
+    
+    return () => {
+      clearTimeout(timeoutId);
+      observer.disconnect();
+      mutationObserver.disconnect();
+    };
   }, [contentRef]);
 
   const clampTransform = useCallback((
@@ -154,6 +186,18 @@ export function usePinchZoom({
     const container = containerRef.current;
     const content = contentRef.current;
     if (!container || !content) return;
+
+    // Ensure content is initialized on first touch
+    if (!contentInitialized.current) {
+      const rect = content.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        initialContentSize.current = {
+          width: rect.width,
+          height: rect.height,
+        };
+        contentInitialized.current = true;
+      }
+    }
 
     // Pinch start (two fingers)
     if (e.touches.length === 2) {
@@ -427,6 +471,18 @@ export function usePinchZoom({
     const container = containerRef.current;
     const content = contentRef.current;
     
+    // Ensure initialization
+    if (!contentInitialized.current && content) {
+      const rect = content.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        initialContentSize.current = {
+          width: rect.width,
+          height: rect.height,
+        };
+        contentInitialized.current = true;
+      }
+    }
+    
     setTransform(prev => {
       const newScale = Math.min(maxScale, prev.scale * 1.25);
       
@@ -443,6 +499,18 @@ export function usePinchZoom({
   const zoomOut = useCallback(() => {
     const container = containerRef.current;
     const content = contentRef.current;
+    
+    // Ensure initialization
+    if (!contentInitialized.current && content) {
+      const rect = content.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        initialContentSize.current = {
+          width: rect.width,
+          height: rect.height,
+        };
+        contentInitialized.current = true;
+      }
+    }
     
     setTransform(prev => {
       const newScale = Math.max(minScale, prev.scale / 1.25);
