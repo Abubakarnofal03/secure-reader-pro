@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
-import { getDeviceId } from '@/lib/device';
+import { getDeviceId, clearDeviceId } from '@/lib/device';
 
 interface Profile {
   id: string;
@@ -51,7 +51,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const validateSession = async (profileData: Profile) => {
-    const deviceId = getDeviceId();
+    const deviceId = await getDeviceId();
     
     if (profileData.active_device_id && profileData.active_device_id !== deviceId) {
       // Session was taken over by another device
@@ -130,7 +130,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signIn = async (email: string, password: string) => {
-    const deviceId = getDeviceId();
+    const deviceId = await getDeviceId();
 
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
@@ -174,8 +174,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .eq('id', user.id);
     }
     
-    // Clear local device ID
-    localStorage.removeItem('device_id');
+    // Clear local device ID using the storage utility
+    await clearDeviceId();
     
     await supabase.auth.signOut();
     setUser(null);

@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { X, Loader2, AlertTriangle, ZoomIn, ZoomOut } from 'lucide-react';
+import { X, Loader2, AlertTriangle, ZoomIn, ZoomOut, Menu } from 'lucide-react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -10,6 +10,7 @@ import { GoToPageDialog } from '@/components/reader/GoToPageDialog';
 import { ResumeReadingToast } from '@/components/reader/ResumeReadingToast';
 import { ScrollProgressBar } from '@/components/reader/ScrollProgressBar';
 import { FloatingPageIndicator } from '@/components/reader/FloatingPageIndicator';
+import { TableOfContents } from '@/components/reader/TableOfContents';
 import { Progress } from '@/components/ui/progress';
 import { getDeviceId } from '@/lib/device';
 import { useSecurityMonitor } from '@/hooks/useSecurityMonitor';
@@ -17,6 +18,7 @@ import { usePinchZoom } from '@/hooks/usePinchZoom';
 import { useReadingProgress } from '@/hooks/useReadingProgress';
 import { usePrivacyScreen } from '@/hooks/usePrivacyScreen';
 import { useScrollPageDetection } from '@/hooks/useScrollPageDetection';
+import { usePdfOutline } from '@/hooks/usePdfOutline';
 
 // Set up PDF.js worker
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
@@ -45,8 +47,8 @@ export default function SecureReaderScreen() {
   // Security monitoring for iOS screenshot/recording detection
   const { isRecording, screenshotDetected, clearScreenshotAlert } = useSecurityMonitor();
   
-  // Privacy screen protection - TEMPORARILY DISABLED for testing
-  usePrivacyScreen(false);
+  // Privacy screen protection - ENABLED for security
+  usePrivacyScreen(true);
   
   const [content, setContent] = useState<ContentDetails | null>(null);
   const [numPages, setNumPages] = useState<number>(0);
@@ -60,6 +62,9 @@ export default function SecureReaderScreen() {
   const [recentPages, setRecentPages] = useState<number[]>([]);
   const [hasInitializedPage, setHasInitializedPage] = useState(false);
   const [hasAccess, setHasAccess] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [pdfDocument, setPdfDocument] = useState<any>(null);
+  const [showToc, setShowToc] = useState(false);
 
   // Scroll-based page detection
   const { 
@@ -302,9 +307,17 @@ export default function SecureReaderScreen() {
     fetchSecureContent();
   }, [id, signOut, navigate, checkingAccess, hasAccess]);
 
-  const onDocumentLoadSuccess = useCallback(({ numPages }: { numPages: number }) => {
-    setNumPages(numPages);
+  // PDF Outline hook for table of contents
+  const { outline, hasOutline } = usePdfOutline(pdfDocument);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const onDocumentLoadSuccess = useCallback(({ numPages: pages }: { numPages: number }, doc?: any) => {
+    setNumPages(pages);
     setHasInitializedPage(true);
+    // Store the PDF document for outline extraction
+    if (doc) {
+      setPdfDocument(doc);
+    }
   }, []);
 
   const goToPage = useCallback((page: number) => {
@@ -407,15 +420,34 @@ export default function SecureReaderScreen() {
         recentPages={recentPages}
       />
 
+      {/* Table of Contents Sidebar */}
+      <TableOfContents
+        isOpen={showToc}
+        onClose={() => setShowToc(false)}
+        outline={outline}
+        currentPage={currentPage}
+        onNavigate={goToPage}
+        hasOutline={hasOutline}
+      />
+
       {/* Header */}
       <header className="sticky top-0 z-30 glass border-b border-border px-4 py-3">
         <div className="flex items-center justify-between">
-          <button
-            onClick={handleClose}
-            className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-secondary transition-colors"
-          >
-            <X className="h-5 w-5 text-foreground" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowToc(true)}
+              className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-secondary transition-colors"
+              title="Table of Contents"
+            >
+              <Menu className="h-5 w-5 text-foreground" />
+            </button>
+            <button
+              onClick={handleClose}
+              className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-secondary transition-colors"
+            >
+              <X className="h-5 w-5 text-foreground" />
+            </button>
+          </div>
           <div className="text-center flex-1 mx-4">
             <h1 className="line-clamp-1 text-sm font-medium text-foreground">
               {content?.title}
@@ -493,7 +525,7 @@ export default function SecureReaderScreen() {
             {pdfDataUri && (
               <Document
                 file={pdfDataUri}
-                onLoadSuccess={onDocumentLoadSuccess}
+                onLoadSuccess={(loadedDoc) => onDocumentLoadSuccess({ numPages: loadedDoc.numPages }, loadedDoc)}
                 loading={
                   <div className="flex flex-col items-center justify-center py-20">
                     <Loader2 className="h-8 w-8 animate-spin text-primary mb-2" />

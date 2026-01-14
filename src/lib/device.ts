@@ -1,15 +1,26 @@
 // Generate or retrieve a unique device ID for session management
+import { storage } from './storage';
+
 const DEVICE_ID_KEY = 'secure_reader_device_id';
 
-export function getDeviceId(): string {
-  let deviceId = localStorage.getItem(DEVICE_ID_KEY);
+// Cache the device ID in memory to avoid async calls on every access
+let cachedDeviceId: string | null = null;
+
+export async function getDeviceId(): Promise<string> {
+  // Return cached value if available
+  if (cachedDeviceId) {
+    return cachedDeviceId;
+  }
+
+  let deviceId = await storage.getItem(DEVICE_ID_KEY);
   
   if (!deviceId) {
     // Generate a unique device ID
     deviceId = generateDeviceId();
-    localStorage.setItem(DEVICE_ID_KEY, deviceId);
+    await storage.setItem(DEVICE_ID_KEY, deviceId);
   }
   
+  cachedDeviceId = deviceId;
   return deviceId;
 }
 
@@ -23,6 +34,7 @@ function generateDeviceId(): string {
 }
 
 // Clear device ID (for testing or logout purposes)
-export function clearDeviceId(): void {
-  localStorage.removeItem(DEVICE_ID_KEY);
+export async function clearDeviceId(): Promise<void> {
+  cachedDeviceId = null;
+  await storage.removeItem(DEVICE_ID_KEY);
 }
