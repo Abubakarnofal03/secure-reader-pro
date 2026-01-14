@@ -209,7 +209,7 @@ export function PurchaseDialog({ content, onClose, onPurchaseSubmitted }: Purcha
               <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-br from-[hsl(43_74%_49%/0.1)] to-transparent rounded-full -translate-y-1/2 translate-x-1/2" />
               <p className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Amount</p>
               <p className="text-4xl font-display font-bold text-foreground mt-1">
-                {formatPrice(content.price, content.currency)}
+                {formatPrice(content.price)}
               </p>
             </div>
 

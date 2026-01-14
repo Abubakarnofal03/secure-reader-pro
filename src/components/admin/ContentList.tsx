@@ -291,7 +291,7 @@ export function ContentList({ onManageAccess, refreshTrigger }: ContentListProps
               )}
               <div className="mt-1.5 flex items-center gap-2 flex-wrap">
                 <span className="inline-flex items-center rounded-full bg-primary/10 text-primary px-2 py-0.5 text-xs font-medium">
-                  {formatPrice(content.price, content.currency)}
+                  {formatPrice(content.price)}
                 </span>
                 <span
                   className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${

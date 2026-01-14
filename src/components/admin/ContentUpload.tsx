@@ -5,11 +5,9 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { CoverUpload } from './CoverUpload';
-import { CURRENCIES, getCurrencySymbol } from '@/lib/currency';
 
 interface ContentUploadProps {
   onSuccess: () => void;
@@ -24,7 +22,6 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
-  const [currency, setCurrency] = useState('INR');
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -122,7 +119,6 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
       xhr.send(selectedFile);
 
       await uploadPromise;
-
       // Create content record
       setUploadProgress(100);
       
@@ -134,7 +130,7 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
           file_path: filePath,
           is_active: true,
           price: priceValue,
-          currency: currency,
+          currency: 'PKR',
           cover_url: coverUrl,
         });
 
@@ -151,7 +147,6 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
       setTitle('');
       setDescription('');
       setPrice('');
-      setCurrency('INR');
       setCoverUrl(null);
       setUploadProgress(0);
       if (fileInputRef.current) {
@@ -244,38 +239,24 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
           />
         </div>
 
-        {/* Price & Currency */}
+        {/* Price */}
         <div>
-          <Label htmlFor="price">Price *</Label>
-          <div className="flex gap-2 mt-1.5">
-            <Select value={currency} onValueChange={setCurrency} disabled={uploading}>
-              <SelectTrigger className="w-28">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {CURRENCIES.map((c) => (
-                  <SelectItem key={c.code} value={c.code}>
-                    {c.symbol} {c.code}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <div className="relative flex-1">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                {getCurrencySymbol(currency)}
-              </span>
-              <Input
-                id="price"
-                type="number"
-                min="0"
-                step="0.01"
-                value={price}
-                onChange={(e) => setPrice(e.target.value)}
-                placeholder="0.00"
-                className="pl-8"
-                disabled={uploading}
-              />
-            </div>
+          <Label htmlFor="price">Price (Rs) *</Label>
+          <div className="relative mt-1.5">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+              Rs
+            </span>
+            <Input
+              id="price"
+              type="number"
+              min="0"
+              step="0.01"
+              value={price}
+              onChange={(e) => setPrice(e.target.value)}
+              placeholder="0.00"
+              className="pl-10"
+              disabled={uploading}
+            />
           </div>
         </div>
 
