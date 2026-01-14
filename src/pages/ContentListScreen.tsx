@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { BookOpen, User, ChevronRight, Library, Lock, Clock, CheckCircle, Store, ShoppingBag } from 'lucide-react';
+import { BookOpen, User, ChevronRight, Library, Lock, Clock, CheckCircle, Store, ShoppingBag, RefreshCw } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { PurchaseDialog } from '@/components/library/PurchaseDialog';
@@ -29,13 +29,24 @@ export default function ContentListScreen() {
   const [purchaseStatus, setPurchaseStatus] = useState<PurchaseStatus>({});
   const [selectedContent, setSelectedContent] = useState<ContentItem | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('my-books');
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [pullDistance, setPullDistance] = useState(0);
+  const mainRef = useRef<HTMLDivElement>(null);
+  const startY = useRef(0);
+  const isPulling = useRef(false);
+
+  const PULL_THRESHOLD = 80;
 
   useEffect(() => {
     fetchContent();
   }, [user]);
 
-  const fetchContent = async () => {
+  const fetchContent = useCallback(async (showRefreshIndicator = false) => {
     if (!user) return;
+    
+    if (showRefreshIndicator) {
+      setIsRefreshing(true);
+    }
     
     // Fetch all active content
     const { data: contentData, error: contentError } = await supabase
@@ -74,7 +85,40 @@ export default function ContentListScreen() {
     });
     setPurchaseStatus(statusMap);
     setLoading(false);
-  };
+    setIsRefreshing(false);
+  }, [user]);
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    const scrollTop = mainRef.current?.scrollTop ?? 0;
+    if (scrollTop <= 0) {
+      startY.current = e.touches[0].clientY;
+      isPulling.current = true;
+    }
+  }, []);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (!isPulling.current || isRefreshing) return;
+    
+    const scrollTop = mainRef.current?.scrollTop ?? 0;
+    if (scrollTop > 0) {
+      isPulling.current = false;
+      setPullDistance(0);
+      return;
+    }
+
+    const currentY = e.touches[0].clientY;
+    const distance = Math.max(0, currentY - startY.current);
+    const dampedDistance = Math.min(distance * 0.5, 120);
+    setPullDistance(dampedDistance);
+  }, [isRefreshing]);
+
+  const handleTouchEnd = useCallback(() => {
+    if (pullDistance >= PULL_THRESHOLD && !isRefreshing) {
+      fetchContent(true);
+    }
+    isPulling.current = false;
+    setPullDistance(0);
+  }, [pullDistance, isRefreshing, fetchContent]);
 
   const handleContentClick = (item: ContentItem) => {
     const status = purchaseStatus[item.id];
@@ -169,8 +213,32 @@ export default function ContentListScreen() {
         </div>
       </header>
 
+      {/* Pull to Refresh Indicator */}
+      <div 
+        className="flex items-center justify-center overflow-hidden transition-all duration-200"
+        style={{ height: pullDistance > 0 ? pullDistance : 0 }}
+      >
+        <motion.div
+          animate={{ 
+            rotate: isRefreshing ? 360 : (pullDistance / PULL_THRESHOLD) * 180,
+            scale: Math.min(pullDistance / PULL_THRESHOLD, 1)
+          }}
+          transition={{ 
+            rotate: isRefreshing ? { repeat: Infinity, duration: 1, ease: "linear" } : { duration: 0 }
+          }}
+        >
+          <RefreshCw className={`h-6 w-6 ${pullDistance >= PULL_THRESHOLD ? 'text-primary' : 'text-muted-foreground'}`} />
+        </motion.div>
+      </div>
+
       {/* Content */}
-      <main className="flex-1 px-4 py-6">
+      <main 
+        ref={mainRef}
+        className="flex-1 px-4 py-6 overflow-auto"
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+      >
         {loading ? (
           <div className="space-y-4">
             {[1, 2, 3].map((i) => (
