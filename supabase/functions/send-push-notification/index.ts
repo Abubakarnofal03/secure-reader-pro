@@ -194,7 +194,7 @@ serve(async (req) => {
       const { data: admins, error } = await supabase
         .from("profiles")
         .select("fcm_token")
-        .eq("is_admin", true)
+        .eq("role", "admin")
         .not("fcm_token", "is", null);
 
       if (error) {
