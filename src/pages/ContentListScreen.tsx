@@ -7,6 +7,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { PurchaseDialog } from '@/components/library/PurchaseDialog';
 import { BookCover } from '@/components/library/BookCover';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { formatPrice } from '@/lib/currency';
 
 interface ContentItem {
   id: string;
@@ -14,6 +15,7 @@ interface ContentItem {
   description: string | null;
   file_path: string;
   price: number;
+  currency: string;
   cover_url: string | null;
 }
 
@@ -57,7 +59,7 @@ export default function ContentListScreen() {
     
     const { data: contentData, error: contentError } = await supabase
       .from('content')
-      .select('id, title, description, file_path, price, cover_url')
+      .select('id, title, description, file_path, price, currency, cover_url')
       .eq('is_active', true)
       .order('created_at', { ascending: false });
 
@@ -378,7 +380,7 @@ export default function ContentListScreen() {
                         {activeTab === 'store' && getStatusBadge(item.id)}
                         {activeTab === 'store' && !status && (
                           <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-bold bg-primary/10 text-primary">
-                            ₹{item.price}
+                            {formatPrice(item.price, item.currency)}
                           </span>
                         )}
                         {activeTab === 'my-books' && (
