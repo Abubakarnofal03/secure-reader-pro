@@ -11,11 +11,13 @@ import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
+import { BookCover } from './BookCover';
 
 interface ContentItem {
   id: string;
   title: string;
   price: number;
+  cover_url?: string | null;
 }
 
 interface PurchaseDialogProps {
@@ -169,17 +171,19 @@ export function PurchaseDialog({ content, onClose, onPurchaseSubmitted }: Purcha
       <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto rounded-2xl border-border/80 shadow-[var(--shadow-xl)] p-0">
         {/* Premium Header */}
         <div className="relative px-6 pt-6 pb-4">
-          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-[hsl(43_74%_49%)] to-[hsl(38_72%_55%)]" />
+          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-[hsl(var(--gold))] to-[hsl(38_72%_55%)]" />
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-3 font-display text-xl">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary shadow-[var(--shadow-sm)]">
-                <CreditCard className="h-5 w-5 text-primary-foreground" />
+            <div className="flex items-start gap-4">
+              <BookCover coverUrl={content.cover_url} title={content.title} size="sm" />
+              <div className="flex-1 min-w-0">
+                <DialogTitle className="font-display text-lg leading-tight line-clamp-2">
+                  {content.title}
+                </DialogTitle>
+                <DialogDescription className="text-muted-foreground mt-1 text-sm">
+                  Acquire this publication
+                </DialogDescription>
               </div>
-              Acquire Publication
-            </DialogTitle>
-            <DialogDescription className="text-muted-foreground mt-1">
-              Complete payment to access "<span className="font-medium text-foreground">{content.title}</span>"
-            </DialogDescription>
+            </div>
           </DialogHeader>
         </div>
 
