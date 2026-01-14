@@ -21,7 +21,7 @@ export default function LoginScreen() {
     e.preventDefault();
     setIsLoading(true);
 
-    const { error } = await signIn(email, password);
+    const { error, deviceConflict } = await signIn(email, password);
 
     if (error) {
       toast({
@@ -29,6 +29,12 @@ export default function LoginScreen() {
         description: error.message,
         variant: 'destructive',
       });
+      setIsLoading(false);
+      return;
+    }
+
+    // If there's a device conflict, the dialog will show automatically
+    if (deviceConflict) {
       setIsLoading(false);
       return;
     }

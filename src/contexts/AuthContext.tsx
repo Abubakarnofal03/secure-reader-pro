@@ -13,17 +13,27 @@ interface Profile {
   last_login_at: string | null;
 }
 
+interface PendingLogin {
+  email: string;
+  password: string;
+  userId: string;
+}
+
 interface AuthContextType {
   user: User | null;
   session: Session | null;
   profile: Profile | null;
   loading: boolean;
   signUp: (email: string, password: string, name: string) => Promise<{ error: Error | null }>;
-  signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
+  signIn: (email: string, password: string) => Promise<{ error: Error | null; deviceConflict?: boolean }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   sessionInvalidated: boolean;
   clearSessionInvalidated: () => void;
+  // New: for handling device conflicts during login
+  pendingDeviceConflict: boolean;
+  confirmLoginOnThisDevice: () => Promise<{ error: Error | null }>;
+  cancelDeviceConflict: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -34,6 +44,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [sessionInvalidated, setSessionInvalidated] = useState(false);
+  const [pendingDeviceConflict, setPendingDeviceConflict] = useState(false);
+  const [pendingLogin, setPendingLogin] = useState<PendingLogin | null>(null);
 
   const fetchProfile = async (userId: string) => {
     const { data, error } = await supabase
@@ -142,7 +154,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     if (data.user) {
-      // Update device ID and last login
+      // Check if there's an active session on another device
+      const profileData = await fetchProfile(data.user.id);
+      
+      if (profileData?.active_device_id && profileData.active_device_id !== deviceId) {
+        // Device conflict detected - store credentials and show confirmation
+        setPendingLogin({ email, password, userId: data.user.id });
+        setPendingDeviceConflict(true);
+        
+        // Sign out temporarily (we'll sign back in when user confirms)
+        await supabase.auth.signOut();
+        setUser(null);
+        setSession(null);
+        setProfile(null);
+        
+        return { error: null, deviceConflict: true };
+      }
+
+      // No conflict - proceed with login
       const { error: updateError } = await supabase
         .from('profiles')
         .update({
@@ -156,13 +185,63 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       // Refresh profile to get updated data
-      const profileData = await fetchProfile(data.user.id);
       if (profileData) {
-        setProfile(profileData);
+        setProfile({ ...profileData, active_device_id: deviceId });
       }
     }
 
     return { error: null };
+  };
+
+  const confirmLoginOnThisDevice = async () => {
+    if (!pendingLogin) {
+      return { error: new Error('No pending login') };
+    }
+
+    const deviceId = await getDeviceId();
+    const { email, password, userId } = pendingLogin;
+
+    // Sign in again
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password
+    });
+
+    if (error) {
+      return { error };
+    }
+
+    if (data.user) {
+      // Force update device ID - this logs out the other device
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({
+          active_device_id: deviceId,
+          last_login_at: new Date().toISOString()
+        })
+        .eq('id', data.user.id);
+
+      if (updateError) {
+        console.error('Error updating device session:', updateError);
+      }
+
+      // Fetch and set profile
+      const profileData = await fetchProfile(data.user.id);
+      if (profileData) {
+        setProfile({ ...profileData, active_device_id: deviceId });
+      }
+    }
+
+    // Clear pending state
+    setPendingLogin(null);
+    setPendingDeviceConflict(false);
+
+    return { error: null };
+  };
+
+  const cancelDeviceConflict = () => {
+    setPendingLogin(null);
+    setPendingDeviceConflict(false);
   };
 
   const signOut = async () => {
@@ -199,7 +278,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         signOut,
         refreshProfile,
         sessionInvalidated,
-        clearSessionInvalidated
+        clearSessionInvalidated,
+        pendingDeviceConflict,
+        confirmLoginOnThisDevice,
+        cancelDeviceConflict
       }}
     >
       {children}
