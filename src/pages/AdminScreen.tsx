@@ -13,6 +13,7 @@ import { UserManagement } from '@/components/admin/UserManagement';
 import { AdminSettings } from '@/components/admin/AdminSettings';
 import { PurchaseApprovals } from '@/components/admin/PurchaseApprovals';
 import { supabase } from '@/integrations/supabase/client';
+import { useAdminFCM } from '@/hooks/useAdminFCM';
 
 interface Content {
   id: string;
@@ -30,6 +31,9 @@ export default function AdminScreen() {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [selectedContent, setSelectedContent] = useState<Content | null>(null);
   const [pendingCount, setPendingCount] = useState(0);
+  
+  // Initialize FCM for admin push notifications
+  useAdminFCM();
 
   useEffect(() => {
     fetchPendingCount();
