@@ -199,44 +199,75 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     const deviceId = await getDeviceId();
-    const { email, password, userId } = pendingLogin;
+    const { email, password } = pendingLogin;
 
-    // Sign in again
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password
-    });
+    try {
+      // Sign in again
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      });
 
-    if (error) {
-      return { error };
-    }
-
-    if (data.user) {
-      // Force update device ID - this logs out the other device
-      const { error: updateError } = await supabase
-        .from('profiles')
-        .update({
-          active_device_id: deviceId,
-          last_login_at: new Date().toISOString()
-        })
-        .eq('id', data.user.id);
-
-      if (updateError) {
-        console.error('Error updating device session:', updateError);
+      if (error) {
+        // Clear pending state on error
+        setPendingLogin(null);
+        setPendingDeviceConflict(false);
+        return { error };
       }
 
-      // Fetch and set profile
-      const profileData = await fetchProfile(data.user.id);
-      if (profileData) {
-        setProfile({ ...profileData, active_device_id: deviceId });
+      if (data.user) {
+        // Force update device ID - this logs out the other device
+        const { error: updateError } = await supabase
+          .from('profiles')
+          .update({
+            active_device_id: deviceId,
+            last_login_at: new Date().toISOString()
+          })
+          .eq('id', data.user.id);
+
+        if (updateError) {
+          console.error('Error updating device session:', updateError);
+        }
+
+        // Fetch profile with retry logic in case of timing issues
+        let profileData = null;
+        for (let i = 0; i < 3; i++) {
+          const { data: profile, error: profileError } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', data.user.id)
+            .maybeSingle();
+          
+          if (!profileError && profile) {
+            profileData = profile as Profile;
+            break;
+          }
+          // Small delay before retry
+          if (i < 2) {
+            await new Promise(resolve => setTimeout(resolve, 300));
+          }
+        }
+
+        if (profileData) {
+          setProfile({ ...profileData, active_device_id: deviceId });
+        }
+
+        // Set user and session from the sign-in response
+        setUser(data.user);
+        setSession(data.session);
       }
+
+      // Clear pending state
+      setPendingLogin(null);
+      setPendingDeviceConflict(false);
+
+      return { error: null };
+    } catch (err) {
+      // Clear pending state on any error
+      setPendingLogin(null);
+      setPendingDeviceConflict(false);
+      return { error: err as Error };
     }
-
-    // Clear pending state
-    setPendingLogin(null);
-    setPendingDeviceConflict(false);
-
-    return { error: null };
   };
 
   const cancelDeviceConflict = () => {
