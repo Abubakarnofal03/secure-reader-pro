@@ -268,54 +268,59 @@ export function ContentList({ onManageAccess, refreshTrigger }: ContentListProps
         {contents.map((content) => (
           <div
             key={content.id}
-            className="flex items-center gap-4 rounded-xl bg-card p-4 border border-border"
+            className="rounded-xl bg-card p-4 border border-border"
           >
-            {/* Cover with edit option */}
-            <button
-              onClick={() => handleCoverClick(content.id)}
-              className="relative group flex-shrink-0"
-              title="Click to change cover"
-            >
-              <BookCover coverUrl={content.cover_url} title={content.title} size="sm" />
-              <div className="absolute inset-0 flex items-center justify-center bg-background/80 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl">
-                <ImagePlus className="h-4 w-4 text-muted-foreground" />
-              </div>
-            </button>
+            <div className="flex items-start gap-4">
+              {/* Cover with edit option */}
+              <button
+                onClick={() => handleCoverClick(content.id)}
+                className="relative group flex-shrink-0"
+                title="Click to change cover"
+              >
+                <BookCover coverUrl={content.cover_url} title={content.title} size="sm" />
+                <div className="absolute inset-0 flex items-center justify-center bg-background/80 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl">
+                  <ImagePlus className="h-4 w-4 text-muted-foreground" />
+                </div>
+              </button>
 
-            <div className="min-w-0 flex-1">
-              <h4 className="font-display font-semibold truncate">{content.title}</h4>
-              {content.description && (
-                <p className="mt-0.5 text-sm text-muted-foreground line-clamp-1">
-                  {content.description}
-                </p>
-              )}
-              <div className="mt-1.5 flex items-center gap-2 flex-wrap">
-                <span className="inline-flex items-center rounded-full bg-primary/10 text-primary px-2 py-0.5 text-xs font-medium">
-                  {formatPrice(content.price)}
-                </span>
-                <span
-                  className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                    content.is_active
-                      ? 'bg-[hsl(var(--success)/0.1)] text-[hsl(var(--success))]'
-                      : 'bg-muted text-muted-foreground'
-                  }`}
-                >
-                  {content.is_active ? 'Active' : 'Inactive'}
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {new Date(content.created_at).toLocaleDateString()}
-                </span>
+              <div className="min-w-0 flex-1">
+                <h4 className="font-display font-semibold truncate">{content.title}</h4>
+                {content.description && (
+                  <p className="mt-0.5 text-sm text-muted-foreground line-clamp-1">
+                    {content.description}
+                  </p>
+                )}
+                <div className="mt-2 flex items-center gap-2 flex-wrap">
+                  <span className="inline-flex items-center rounded-full bg-primary/10 text-primary px-2.5 py-1 text-xs font-medium">
+                    {formatPrice(content.price)}
+                  </span>
+                  <span
+                    className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${
+                      content.is_active
+                        ? 'bg-[hsl(var(--success)/0.1)] text-[hsl(var(--success))]'
+                        : 'bg-muted text-muted-foreground'
+                    }`}
+                  >
+                    {content.is_active ? 'Active' : 'Inactive'}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {new Date(content.created_at).toLocaleDateString()}
+                  </span>
+                </div>
               </div>
             </div>
 
-            <div className="flex items-center gap-1">
+            {/* Action buttons in a separate row on mobile */}
+            <div className="flex items-center justify-end gap-1 mt-3 pt-3 border-t border-border/50">
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => onManageAccess(content)}
                 title="Manage user access"
+                className="h-9 px-3"
               >
-                <Users className="h-4 w-4" />
+                <Users className="h-4 w-4 mr-1.5" />
+                <span className="text-xs">Access</span>
               </Button>
               <Button
                 variant="ghost"
@@ -323,6 +328,7 @@ export function ContentList({ onManageAccess, refreshTrigger }: ContentListProps
                 onClick={() => handleReplaceClick(content.id)}
                 disabled={replacing === content.id}
                 title="Replace file"
+                className="h-9 px-3"
               >
                 {replacing === content.id ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -335,11 +341,12 @@ export function ContentList({ onManageAccess, refreshTrigger }: ContentListProps
                 size="sm"
                 onClick={() => toggleActive(content)}
                 title={content.is_active ? 'Deactivate' : 'Activate'}
+                className="h-9 px-3"
               >
                 {content.is_active ? (
-                  <ToggleRight className="h-4 w-4 text-success" />
+                  <ToggleRight className="h-5 w-5 text-success" />
                 ) : (
-                  <ToggleLeft className="h-4 w-4" />
+                  <ToggleLeft className="h-5 w-5" />
                 )}
               </Button>
               <Button
@@ -347,6 +354,7 @@ export function ContentList({ onManageAccess, refreshTrigger }: ContentListProps
                 size="sm"
                 onClick={() => setDeleteContent(content)}
                 title="Delete content"
+                className="h-9 px-3"
               >
                 <Trash2 className="h-4 w-4 text-destructive" />
               </Button>

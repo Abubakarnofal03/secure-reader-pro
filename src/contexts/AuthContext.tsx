@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { getDeviceId, clearDeviceId } from '@/lib/device';
@@ -46,6 +46,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [sessionInvalidated, setSessionInvalidated] = useState(false);
   const [pendingDeviceConflict, setPendingDeviceConflict] = useState(false);
   const [pendingLogin, setPendingLogin] = useState<PendingLogin | null>(null);
+  // Use ref to persist pendingLogin across React state updates during auth changes
+  const pendingLoginRef = useRef<PendingLogin | null>(null);
 
   const fetchProfile = async (userId: string) => {
     const { data, error } = await supabase
@@ -100,7 +102,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }
           }, 0);
         } else {
-          setProfile(null);
+          // Only clear profile if we're not in a pending device conflict state
+          // This prevents wiping the state during the conflict resolution flow
+          if (!pendingDeviceConflict) {
+            setProfile(null);
+          }
         }
 
         setLoading(false);
@@ -126,7 +132,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [pendingDeviceConflict]);
 
   const signUp = async (email: string, password: string, name: string) => {
     const { error } = await supabase.auth.signUp({
@@ -158,15 +164,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const profileData = await fetchProfile(data.user.id);
       
       if (profileData?.active_device_id && profileData.active_device_id !== deviceId) {
-        // Device conflict detected - store credentials and show confirmation
-        setPendingLogin({ email, password, userId: data.user.id });
+        // Device conflict detected - store credentials BEFORE signing out
+        // Store in both state and ref to ensure persistence across re-renders
+        const loginCredentials = { email, password, userId: data.user.id };
+        pendingLoginRef.current = loginCredentials;
+        setPendingLogin(loginCredentials);
         setPendingDeviceConflict(true);
         
-        // Sign out temporarily (we'll sign back in when user confirms)
+        // Sign out temporarily but keep the pending state
         await supabase.auth.signOut();
-        setUser(null);
-        setSession(null);
-        setProfile(null);
         
         return { error: null, deviceConflict: true };
       }
@@ -194,12 +200,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const confirmLoginOnThisDevice = async () => {
-    if (!pendingLogin) {
+    // Use ref as fallback since state might not be updated yet during rapid re-renders
+    const credentials = pendingLogin || pendingLoginRef.current;
+    if (!credentials) {
       return { error: new Error('No pending login') };
     }
 
     const deviceId = await getDeviceId();
-    const { email, password } = pendingLogin;
+    const { email, password } = credentials;
 
     try {
       // Sign in again
@@ -257,13 +265,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSession(data.session);
       }
 
-      // Clear pending state
+      // Clear pending state including ref
+      pendingLoginRef.current = null;
       setPendingLogin(null);
       setPendingDeviceConflict(false);
 
       return { error: null };
     } catch (err) {
       // Clear pending state on any error
+      pendingLoginRef.current = null;
       setPendingLogin(null);
       setPendingDeviceConflict(false);
       return { error: err as Error };
@@ -271,6 +281,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const cancelDeviceConflict = () => {
+    pendingLoginRef.current = null;
     setPendingLogin(null);
     setPendingDeviceConflict(false);
   };
