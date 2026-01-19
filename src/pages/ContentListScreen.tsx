@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { BookOpen, User, ChevronRight, Library, Clock, CheckCircle, Store, RefreshCw, Sparkles, Crown } from 'lucide-react';
+import { BookOpen, User, ChevronRight, Library, Clock, CheckCircle, Store, RefreshCw, Sparkles, Crown, BookMarked } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { PurchaseDialog } from '@/components/library/PurchaseDialog';
@@ -187,52 +187,52 @@ export default function ContentListScreen() {
 
   return (
     <div className="flex min-h-screen flex-col bg-background safe-top safe-bottom">
-      {/* Premium Header */}
-      <header className="sticky top-0 z-10 glass border-b border-border/50">
-        <div className="px-5 pt-5 pb-4">
-          {/* Top Row */}
-          <div className="flex items-center justify-between mb-5">
-            <div className="flex items-center gap-4">
-              <div className="relative">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary shadow-[var(--shadow-md)]">
-                  <BookOpen className="h-6 w-6 text-primary-foreground" />
-                </div>
-                <div className="absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-md bg-gradient-to-br from-[hsl(43_74%_49%)] to-[hsl(38_72%_55%)]" />
+      {/* Minimal Header */}
+      <header className="sticky top-0 z-10 bg-background/95 backdrop-blur-md border-b border-border/30">
+        <div className="px-4 py-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary/80">
+                <BookMarked className="h-5 w-5 text-primary-foreground" />
               </div>
               <div>
-                <h1 className="font-display text-2xl font-semibold text-foreground">Library</h1>
-                <p className="text-sm text-muted-foreground">
-                  {myBooks.length} publication{myBooks.length !== 1 ? 's' : ''} owned
+                <h1 className="font-display text-xl font-semibold text-foreground">Library</h1>
+                <p className="text-xs text-muted-foreground">
+                  {myBooks.length} owned
                 </p>
               </div>
             </div>
-            <button
-              onClick={() => navigate('/profile')}
-              className="flex h-11 w-11 items-center justify-center rounded-xl bg-secondary border border-border/50 transition-all hover:bg-secondary/80"
-            >
-              {profile?.role === 'admin' ? (
-                <Crown className="h-5 w-5 text-[hsl(var(--gold))]" />
-              ) : (
-                <User className="h-5 w-5 text-muted-foreground" />
-              )}
-            </button>
-            <ThemeToggle />
+            <div className="flex items-center gap-2">
+              <ThemeToggle />
+              <button
+                onClick={() => navigate('/profile')}
+                className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted/50 transition-colors hover:bg-muted"
+              >
+                {profile?.role === 'admin' ? (
+                  <Crown className="h-5 w-5 text-gold" />
+                ) : (
+                  <User className="h-5 w-5 text-muted-foreground" />
+                )}
+              </button>
+            </div>
           </div>
+        </div>
 
-          {/* Premium Tab Switcher */}
-          <div className="flex gap-2 p-1 bg-muted/50 rounded-xl">
+        {/* Modern Segmented Control */}
+        <div className="px-4 pb-3">
+          <div className="flex p-1 bg-muted/30 rounded-2xl">
             <button
               onClick={() => setActiveTab('my-books')}
-              className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-medium text-sm transition-all duration-200 ${
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium transition-all duration-300 ${
                 activeTab === 'my-books'
-                  ? 'bg-card text-foreground shadow-[var(--shadow-md)]'
-                  : 'text-muted-foreground hover:text-foreground'
+                  ? 'bg-card text-foreground shadow-premium-md'
+                  : 'text-muted-foreground'
               }`}
             >
               <BookOpen className="h-4 w-4" />
-              My Publications
+              <span>My Books</span>
               {myBooks.length > 0 && (
-                <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
+                <span className={`min-w-[20px] h-5 flex items-center justify-center px-1.5 rounded-full text-xs font-bold ${
                   activeTab === 'my-books' 
                     ? 'bg-primary text-primary-foreground' 
                     : 'bg-muted text-muted-foreground'
@@ -243,16 +243,16 @@ export default function ContentListScreen() {
             </button>
             <button
               onClick={() => setActiveTab('store')}
-              className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-medium text-sm transition-all duration-200 ${
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium transition-all duration-300 ${
                 activeTab === 'store'
-                  ? 'bg-card text-foreground shadow-[var(--shadow-md)]'
-                  : 'text-muted-foreground hover:text-foreground'
+                  ? 'bg-card text-foreground shadow-premium-md'
+                  : 'text-muted-foreground'
               }`}
             >
               <Store className="h-4 w-4" />
-              Catalogue
+              <span>Catalogue</span>
               {pendingCount > 0 && (
-                <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-[hsl(var(--warning))] text-[hsl(222_47%_11%)]">
+                <span className="min-w-[20px] h-5 flex items-center justify-center px-1.5 rounded-full text-xs font-bold bg-warning text-warning-foreground">
                   {pendingCount}
                 </span>
               )}
@@ -275,51 +275,49 @@ export default function ContentListScreen() {
             rotate: isRefreshing ? { repeat: Infinity, duration: 1, ease: "linear" } : { duration: 0 }
           }}
         >
-          <RefreshCw className={`h-6 w-6 ${pullDistance >= PULL_THRESHOLD ? 'text-primary' : 'text-muted-foreground'}`} />
+          <RefreshCw className={`h-5 w-5 ${pullDistance >= PULL_THRESHOLD ? 'text-primary' : 'text-muted-foreground'}`} />
         </motion.div>
       </div>
 
       {/* Content */}
       <main 
         ref={mainRef}
-        className="flex-1 px-5 py-6 overflow-auto"
+        className="flex-1 overflow-auto"
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       >
         {loading ? (
-          <div className="space-y-4">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="h-28 animate-shimmer rounded-2xl" />
+          <div className="p-4 space-y-3">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="h-24 animate-shimmer rounded-2xl" />
             ))}
           </div>
         ) : displayedContent.length === 0 ? (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="flex flex-col items-center justify-center py-20 text-center"
+            className="flex flex-col items-center justify-center py-20 px-6 text-center"
           >
-            <div className="relative mb-6">
-              <div className="flex h-20 w-20 items-center justify-center rounded-full bg-secondary">
-                {activeTab === 'my-books' ? (
-                  <Library className="h-10 w-10 text-muted-foreground" />
-                ) : (
-                  <Sparkles className="h-10 w-10 text-muted-foreground" />
-                )}
-              </div>
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-muted/50 mb-5">
+              {activeTab === 'my-books' ? (
+                <Library className="h-8 w-8 text-muted-foreground" />
+              ) : (
+                <Sparkles className="h-8 w-8 text-muted-foreground" />
+              )}
             </div>
-            <h2 className="font-display text-xl font-semibold text-foreground">
+            <h2 className="font-display text-lg font-semibold text-foreground">
               {activeTab === 'my-books' ? 'No Publications Yet' : 'Coming Soon'}
             </h2>
-            <p className="mt-3 max-w-xs text-sm text-muted-foreground leading-relaxed">
+            <p className="mt-2 max-w-[280px] text-sm text-muted-foreground leading-relaxed">
               {activeTab === 'my-books'
-                ? "You haven't acquired any publications yet. Browse the catalogue to discover valuable medical resources."
-                : 'New publications will appear here when available.'}
+                ? "Browse the catalogue to discover publications."
+                : 'New publications will appear here.'}
             </p>
             {activeTab === 'my-books' && storeBooks.length > 0 && (
               <button
                 onClick={() => setActiveTab('store')}
-                className="mt-6 px-6 py-3 bg-primary text-primary-foreground rounded-xl font-medium text-sm shadow-[var(--shadow-md)] hover:shadow-[var(--shadow-lg)] transition-all"
+                className="mt-5 px-5 py-2.5 bg-primary text-primary-foreground rounded-xl font-medium text-sm shadow-premium-md active:scale-[0.98] transition-transform"
               >
                 Browse Catalogue
               </button>
@@ -329,33 +327,34 @@ export default function ContentListScreen() {
           <AnimatePresence mode="wait">
             <motion.div 
               key={activeTab}
-              initial={{ opacity: 0, y: 10 }} 
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.2 }}
-              className="space-y-4"
+              initial={{ opacity: 0 }} 
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              className="p-4 space-y-3"
             >
               {displayedContent.map((item, index) => {
                 const status = purchaseStatus[item.id];
                 const isPurchased = status === 'purchased';
                 const isPending = status === 'pending';
+                const progress = readingProgress[item.id] || 0;
                 
                 if (activeTab === 'my-books' && !isPurchased) return null;
                 
                 return (
                   <motion.button
                     key={item.id}
-                    initial={{ opacity: 0, y: 20 }}
+                    initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: index * 0.05 }}
+                    transition={{ delay: index * 0.03, duration: 0.2 }}
                     onClick={() => handleContentClick(item)}
                     disabled={isPending}
-                    className={`group flex w-full items-center gap-4 rounded-2xl border bg-card p-5 text-left transition-all duration-300 ${
+                    className={`group w-full flex items-center gap-4 p-3 rounded-2xl bg-card border text-left transition-all duration-200 active:scale-[0.98] ${
                       isPending 
-                        ? 'opacity-60 cursor-not-allowed border-border/50' 
+                        ? 'opacity-50 cursor-not-allowed border-border/30' 
                         : isPurchased
-                          ? 'border-[hsl(var(--success)/0.2)] hover:border-[hsl(var(--success)/0.4)] hover:shadow-[var(--shadow-lg)]'
-                          : 'border-border/80 hover:border-primary/30 hover:shadow-[var(--shadow-lg)]'
+                          ? 'border-border/50 hover:border-primary/30'
+                          : 'border-border/50 hover:border-primary/30'
                     }`}
                   >
                     {/* Book Cover */}
@@ -363,40 +362,55 @@ export default function ContentListScreen() {
                       coverUrl={item.cover_url} 
                       title={item.title} 
                       isOwned={isPurchased}
-                      progress={readingProgress[item.id]}
+                      progress={progress}
                       category={item.category || undefined}
-                      size="md"
+                      size="lg"
                     />
 
                     {/* Content */}
-                    <div className="min-w-0 flex-1">
-                      <h3 className="font-display text-lg font-semibold text-foreground leading-tight line-clamp-1 group-hover:text-primary transition-colors">
+                    <div className="min-w-0 flex-1 py-1">
+                      <h3 className="font-medium text-base text-foreground leading-snug line-clamp-2">
                         {item.title}
                       </h3>
-                      {item.description && (
-                        <p className="mt-1.5 text-sm text-muted-foreground line-clamp-2 leading-relaxed">
-                          {item.description}
-                        </p>
-                      )}
-                      <div className="mt-3 flex items-center gap-3">
-                        {activeTab === 'store' && getStatusBadge(item.id)}
-                        {activeTab === 'store' && !status && (
-                          <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-bold bg-primary/10 text-primary">
-                            {formatPrice(item.price)}
-                          </span>
-                        )}
-                        {activeTab === 'my-books' && (
-                          <span className="text-xs font-medium text-muted-foreground">
-                            Tap to read
-                          </span>
+                      
+                      {/* Progress or Status */}
+                      <div className="mt-2 flex items-center gap-2">
+                        {activeTab === 'my-books' ? (
+                          progress > 0 && progress < 100 ? (
+                            <div className="flex items-center gap-2 flex-1">
+                              <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                                <div 
+                                  className="h-full bg-gradient-to-r from-gold to-gold/80 rounded-full transition-all"
+                                  style={{ width: `${progress}%` }}
+                                />
+                              </div>
+                              <span className="text-xs font-medium text-muted-foreground">{progress}%</span>
+                            </div>
+                          ) : progress === 100 ? (
+                            <span className="inline-flex items-center gap-1 text-xs font-medium text-success">
+                              <CheckCircle className="h-3.5 w-3.5" />
+                              Completed
+                            </span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">Start reading</span>
+                          )
+                        ) : (
+                          <>
+                            {getStatusBadge(item.id)}
+                            {!status && (
+                              <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold bg-primary/10 text-primary">
+                                {formatPrice(item.price)}
+                              </span>
+                            )}
+                          </>
                         )}
                       </div>
                     </div>
 
                     <ChevronRight className={`h-5 w-5 flex-shrink-0 transition-all ${
                       isPurchased 
-                        ? 'text-primary group-hover:translate-x-1' 
-                        : 'text-muted-foreground group-hover:text-foreground group-hover:translate-x-1'
+                        ? 'text-primary' 
+                        : 'text-muted-foreground/50'
                     }`} />
                   </motion.button>
                 );

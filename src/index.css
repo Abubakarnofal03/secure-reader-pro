@@ -56,7 +56,9 @@
 
     /* Status colors */
     --success: 152 76% 36%;
+    --success-foreground: 0 0% 100%;
     --warning: 38 92% 50%;
+    --warning-foreground: 222 47% 11%;
 
     /* Premium gradients */
     --gradient-gold: linear-gradient(135deg, hsl(43 74% 49%), hsl(38 72% 55%));
