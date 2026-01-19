@@ -4,9 +4,6 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
-  "Pragma": "no-cache",
-  "Expires": "0",
 };
 
 serve(async (req) => {
@@ -121,24 +118,19 @@ serve(async (req) => {
       );
     }
 
-    // Download the PDF file from storage
-    const { data: fileData, error: fileError } = await adminClient.storage
+    // Generate a short-lived signed URL (5 minutes) for the PDF
+    // This avoids loading the entire file into memory
+    const { data: signedUrlData, error: signedUrlError } = await adminClient.storage
       .from("content-files")
-      .download(content.file_path);
+      .createSignedUrl(content.file_path, 300); // 5 minutes expiry
 
-    if (fileError || !fileData) {
+    if (signedUrlError || !signedUrlData?.signedUrl) {
+      console.error("Failed to create signed URL:", signedUrlError);
       return new Response(
-        JSON.stringify({ error: "Failed to load content file" }),
+        JSON.stringify({ error: "Failed to generate content access URL" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-
-    // Convert PDF file to base64 for the client to process
-    // The client will render using react-pdf but we add security via watermark
-    const arrayBuffer = await fileData.arrayBuffer();
-    const base64 = btoa(
-      new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), "")
-    );
 
     // Generate watermark data with user info and timestamp
     const watermarkData = {
@@ -151,8 +143,7 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        pdfBase64: base64,
-        contentType: "application/pdf",
+        signedUrl: signedUrlData.signedUrl,
         title: content.title,
         watermark: watermarkData,
         pageRequested: page_number,
