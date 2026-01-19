@@ -45,11 +45,11 @@ export default function SignupScreen() {
     }
 
     toast({
-      title: 'Account created',
-      description: 'Please wait for admin approval to access content.',
+      title: 'Welcome!',
+      description: 'Your account has been created. Start exploring our publications!',
     });
 
-    navigate('/access-pending', { replace: true });
+    navigate('/library', { replace: true });
   };
 
   return (

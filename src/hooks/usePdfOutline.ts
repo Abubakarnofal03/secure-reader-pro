@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { usePdfTextExtraction, ExtractedHeading } from './usePdfTextExtraction';
 
 export interface OutlineItem {
   title: string;
@@ -11,29 +12,54 @@ type PDFDocument = any;
 
 /**
  * Hook to extract the PDF outline (table of contents) from a PDF document.
- * Uses pdfjs-dist's getOutline() method to get bookmarks.
+ * Uses pdfjs-dist's getOutline() method first, then falls back to text-based extraction.
  */
 export function usePdfOutline(pdfDocument: PDFDocument | null) {
   const [outline, setOutline] = useState<OutlineItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [needsFallback, setNeedsFallback] = useState(false);
+
+  // Text extraction fallback - only enabled when needed
+  const { 
+    headings: extractedHeadings, 
+    loading: textLoading, 
+    hasHeadings 
+  } = usePdfTextExtraction(pdfDocument, needsFallback);
+
+  // Convert extracted headings to outline format
+  useEffect(() => {
+    if (needsFallback && !textLoading && extractedHeadings.length > 0) {
+      const converted: OutlineItem[] = extractedHeadings.map((h: ExtractedHeading) => ({
+        title: h.title,
+        pageNumber: h.pageNumber,
+      }));
+      setOutline(converted);
+      setLoading(false);
+    } else if (needsFallback && !textLoading && extractedHeadings.length === 0) {
+      setLoading(false);
+    }
+  }, [needsFallback, textLoading, extractedHeadings]);
 
   useEffect(() => {
     if (!pdfDocument) {
       setOutline([]);
+      setNeedsFallback(false);
       return;
     }
 
     const extractOutline = async () => {
       setLoading(true);
       setError(null);
+      setNeedsFallback(false);
 
       try {
         const rawOutline = await pdfDocument.getOutline();
         
         if (!rawOutline || rawOutline.length === 0) {
-          setOutline([]);
-          setLoading(false);
+          // No bookmarks found - enable text-based fallback
+          console.log('No PDF bookmarks found, using text-based heading extraction');
+          setNeedsFallback(true);
           return;
         }
 
@@ -89,17 +115,26 @@ export function usePdfOutline(pdfDocument: PDFDocument | null) {
 
         const processedOutline = await processItems(rawOutline);
         setOutline(processedOutline);
+        setLoading(false);
       } catch (err) {
         console.error('Error extracting PDF outline:', err);
         setError('Failed to extract table of contents');
         setOutline([]);
-      } finally {
-        setLoading(false);
+        // Try fallback on error
+        setNeedsFallback(true);
       }
     };
 
     extractOutline();
   }, [pdfDocument]);
 
-  return { outline, loading, error, hasOutline: outline.length > 0 };
+  const isLoading = loading || (needsFallback && textLoading);
+
+  return { 
+    outline, 
+    loading: isLoading, 
+    error, 
+    hasOutline: outline.length > 0,
+    isFromTextExtraction: needsFallback && hasHeadings
+  };
 }
