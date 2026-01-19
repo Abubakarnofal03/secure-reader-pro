@@ -1,4 +1,5 @@
 import { BookOpen, CheckCircle } from 'lucide-react';
+import { getCategoryConfig } from '@/lib/categories';
 
 interface BookCoverProps {
   coverUrl?: string | null;
@@ -6,6 +7,7 @@ interface BookCoverProps {
   isOwned?: boolean;
   progress?: number; // 0-100 percentage
   size?: 'sm' | 'md' | 'lg';
+  category?: string;
   className?: string;
 }
 
@@ -21,9 +23,10 @@ const iconSizes = {
   lg: 'h-10 w-10',
 };
 
-export function BookCover({ coverUrl, title, isOwned = false, progress, size = 'md', className = '' }: BookCoverProps) {
+export function BookCover({ coverUrl, title, isOwned = false, progress, size = 'md', category, className = '' }: BookCoverProps) {
   const showProgress = isOwned && typeof progress === 'number' && progress > 0 && progress < 100;
   const isComplete = isOwned && progress === 100;
+  const categoryConfig = category ? getCategoryConfig(category) : null;
 
   return (
     <div 
@@ -70,7 +73,17 @@ export function BookCover({ coverUrl, title, isOwned = false, progress, size = '
         </div>
       )}
 
-      {/* Completion badge or owned badge */}
+      {/* Category icon badge - bottom left */}
+      {categoryConfig && categoryConfig.id !== 'general' && (
+        <div className="absolute bottom-1 left-1 h-5 w-5 rounded-full bg-background/90 backdrop-blur-sm flex items-center justify-center shadow-sm border border-border/50">
+          {(() => {
+            const IconComponent = categoryConfig.icon;
+            return <IconComponent className={`h-3 w-3 ${categoryConfig.color}`} />;
+          })()}
+        </div>
+      )}
+
+      {/* Completion badge or owned badge - top right */}
       {isComplete ? (
         <div className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-gradient-to-br from-[hsl(var(--success))] to-[hsl(152_70%_40%)] flex items-center justify-center shadow-[var(--shadow-sm)]">
           <CheckCircle className="h-3 w-3 text-white" />

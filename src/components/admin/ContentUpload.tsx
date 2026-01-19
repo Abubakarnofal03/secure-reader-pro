@@ -5,9 +5,11 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { CoverUpload } from './CoverUpload';
+import { CONTENT_CATEGORIES, getCategoryConfig } from '@/lib/categories';
 
 interface ContentUploadProps {
   onSuccess: () => void;
@@ -22,6 +24,7 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
+  const [category, setCategory] = useState('general');
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -132,6 +135,7 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
           price: priceValue,
           currency: 'PKR',
           cover_url: coverUrl,
+          category: category,
         });
 
       if (insertError) {
@@ -147,6 +151,7 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
       setTitle('');
       setDescription('');
       setPrice('');
+      setCategory('general');
       setCoverUrl(null);
       setUploadProgress(0);
       if (fileInputRef.current) {
@@ -258,6 +263,40 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
               disabled={uploading}
             />
           </div>
+        </div>
+
+        {/* Category */}
+        <div>
+          <Label htmlFor="category">Category</Label>
+          <Select value={category} onValueChange={setCategory} disabled={uploading}>
+            <SelectTrigger className="mt-1.5">
+              <SelectValue placeholder="Select category">
+                {(() => {
+                  const config = getCategoryConfig(category);
+                  const IconComponent = config.icon;
+                  return (
+                    <span className="flex items-center gap-2">
+                      <IconComponent className={`h-4 w-4 ${config.color}`} />
+                      {config.label}
+                    </span>
+                  );
+                })()}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {CONTENT_CATEGORIES.map((cat) => {
+                const IconComponent = cat.icon;
+                return (
+                  <SelectItem key={cat.id} value={cat.id}>
+                    <span className="flex items-center gap-2">
+                      <IconComponent className={`h-4 w-4 ${cat.color}`} />
+                      {cat.label}
+                    </span>
+                  </SelectItem>
+                );
+              })}
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Description */}

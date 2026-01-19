@@ -17,6 +17,7 @@ interface ContentItem {
   price: number;
   currency: string;
   cover_url: string | null;
+  category: string | null;
 }
 
 interface PurchaseStatus {
@@ -59,7 +60,7 @@ export default function ContentListScreen() {
     
     const { data: contentData, error: contentError } = await supabase
       .from('content')
-      .select('id, title, description, file_path, price, currency, cover_url')
+      .select('id, title, description, file_path, price, currency, cover_url, category')
       .eq('is_active', true)
       .order('created_at', { ascending: false });
 
@@ -363,6 +364,7 @@ export default function ContentListScreen() {
                       title={item.title} 
                       isOwned={isPurchased}
                       progress={readingProgress[item.id]}
+                      category={item.category || undefined}
                       size="md"
                     />
 

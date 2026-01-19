@@ -22,10 +22,9 @@ export default function SplashScreen() {
       if (user && profile) {
         if (profile.role === 'admin') {
           navigate('/admin', { replace: true });
-        } else if (profile.has_access) {
-          navigate('/library', { replace: true });
         } else {
-          navigate('/access-pending', { replace: true });
+          // All users go directly to library - no access pending check
+          navigate('/library', { replace: true });
         }
       } else {
         navigate('/login', { replace: true });

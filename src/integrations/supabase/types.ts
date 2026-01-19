@@ -37,6 +37,7 @@ export type Database = {
       }
       content: {
         Row: {
+          category: string | null
           cover_url: string | null
           created_at: string
           currency: string
@@ -49,6 +50,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          category?: string | null
           cover_url?: string | null
           created_at?: string
           currency?: string
@@ -61,6 +63,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          category?: string | null
           cover_url?: string | null
           created_at?: string
           currency?: string
