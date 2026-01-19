@@ -12,9 +12,9 @@ interface BookCoverProps {
 }
 
 const sizeClasses = {
-  sm: 'h-16 w-12',
-  md: 'h-24 w-18',
-  lg: 'h-32 w-24',
+  sm: 'h-14 w-10',
+  md: 'h-20 w-14',
+  lg: 'h-24 w-[68px]',
 };
 
 const iconSizes = {
