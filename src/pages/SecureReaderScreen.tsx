@@ -24,7 +24,7 @@ pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/b
 
 interface ContentDetails {
   title: string;
-  pdfBase64: string;
+  signedUrl: string;
   watermark: {
     userName: string;
     userEmail: string;
@@ -271,7 +271,7 @@ export default function SecureReaderScreen() {
 
         setContent({
           title: data.title,
-          pdfBase64: data.pdfBase64,
+          signedUrl: data.signedUrl,
           watermark: data.watermark,
         });
 
@@ -361,7 +361,7 @@ export default function SecureReaderScreen() {
     );
   }
 
-  const pdfDataUri = content ? `data:application/pdf;base64,${content.pdfBase64}` : null;
+  const pdfSource = content?.signedUrl || null;
 
   return (
     <div 
@@ -499,9 +499,9 @@ export default function SecureReaderScreen() {
               transition: 'none',
             }}
           >
-            {pdfDataUri && (
+            {pdfSource && (
               <Document
-                file={pdfDataUri}
+                file={pdfSource}
                 onLoadSuccess={(loadedDoc) => onDocumentLoadSuccess({ numPages: loadedDoc.numPages }, loadedDoc)}
                 loading={
                   <div className="flex flex-col items-center justify-center py-20">
