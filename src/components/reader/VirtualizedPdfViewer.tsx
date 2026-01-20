@@ -9,6 +9,7 @@ interface VirtualizedPdfViewerProps {
   scale: number;
   registerPage: (pageNumber: number, element: HTMLDivElement | null) => void;
   scrollContainerRef: RefObject<HTMLDivElement>;
+  gestureTransform?: string;
 }
 
 // Page component - renders at scaled size
@@ -39,20 +40,9 @@ const PdfPage = memo(({
     <div
       data-page={pageNumber}
       ref={pageRef}
-      className="flex flex-col items-center"
+      className="flex justify-center"
       style={{ width: scaledWidth }}
     >
-      {/* Page break indicator - subtle, positioned above the page */}
-      {pageNumber > 1 && (
-        <div 
-          className="flex items-center justify-center py-2 mb-1"
-          style={{ width: scaledWidth }}
-        >
-          <span className="text-[10px] font-medium text-muted-foreground/40">
-            — {pageNumber} —
-          </span>
-        </div>
-      )}
       <Page
         pageNumber={pageNumber}
         width={scaledWidth}
@@ -93,15 +83,17 @@ export function VirtualizedPdfViewer({
   scale,
   registerPage,
   scrollContainerRef,
+  gestureTransform,
 }: VirtualizedPdfViewerProps) {
   const [isReady, setIsReady] = useState(false);
 
-  // Calculate scaled dimensions - this is the key to re-render zoom
+  // Calculate scaled dimensions
   const scaledWidth = Math.round(pageWidth * scale);
   const scaledHeight = Math.round(scaledWidth * 1.4); // Maintain aspect ratio
   
-  // Total height per item including page break indicator (40px) 
-  const estimatedPageHeight = scaledHeight + 40;
+  // Gap between pages
+  const pageGap = 16;
+  const estimatedPageHeight = scaledHeight + pageGap;
 
   // Wait for scroll container to be available
   useEffect(() => {
@@ -119,7 +111,7 @@ export function VirtualizedPdfViewer({
     count: numPages,
     getScrollElement: () => scrollContainerRef.current,
     estimateSize: () => estimatedPageHeight,
-    // Higher overscan for smoother fast scrolling - keep more pages in DOM
+    // Higher overscan for smoother fast scrolling
     overscan: 5,
     paddingStart: 16,
     paddingEnd: 16,
@@ -140,9 +132,13 @@ export function VirtualizedPdfViewer({
       className="relative"
       style={{
         height: virtualizer.getTotalSize(),
-        // Set explicit width to allow proper horizontal scrolling
         width: scaledWidth,
         margin: '0 auto',
+        // Apply gesture transform for instant visual feedback during pinch
+        transform: gestureTransform,
+        transformOrigin: 'center top',
+        // Smooth transition only when NOT gesturing (on commit)
+        transition: gestureTransform ? 'none' : 'transform 0.15s ease-out',
       }}
     >
       {virtualItems.map((virtualItem) => {
