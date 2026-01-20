@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { X, Loader2, AlertTriangle, ZoomIn, ZoomOut, Menu, BookOpen } from 'lucide-react';
-import { Document, Page, pdfjs } from 'react-pdf';
+import { Document, pdfjs } from 'react-pdf';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Watermark } from '@/components/Watermark';
@@ -11,6 +11,7 @@ import { ResumeReadingToast } from '@/components/reader/ResumeReadingToast';
 import { ScrollProgressBar } from '@/components/reader/ScrollProgressBar';
 import { FloatingPageIndicator } from '@/components/reader/FloatingPageIndicator';
 import { TableOfContents } from '@/components/reader/TableOfContents';
+import { VirtualizedPdfViewer } from '@/components/reader/VirtualizedPdfViewer';
 import { Progress } from '@/components/ui/progress';
 import { getDeviceId } from '@/lib/device';
 import { useSecurityMonitor } from '@/hooks/useSecurityMonitor';
@@ -19,12 +20,14 @@ import { useReadingProgress } from '@/hooks/useReadingProgress';
 import { usePrivacyScreen } from '@/hooks/usePrivacyScreen';
 import { useScrollPageDetection } from '@/hooks/useScrollPageDetection';
 import { usePdfOutline } from '@/hooks/usePdfOutline';
+import { useSignedUrlRefresh } from '@/hooks/useSignedUrlRefresh';
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
 interface ContentDetails {
   title: string;
   signedUrl: string;
+  expiresAt: number;
   watermark: {
     userName: string;
     userEmail: string;
@@ -274,6 +277,7 @@ export default function SecureReaderScreen() {
         setContent({
           title: data.title,
           signedUrl: data.signedUrl,
+          expiresAt: data.expiresAt || Date.now() + (5 * 60 * 1000), // Fallback 5 min
           watermark: data.watermark,
         });
 
@@ -306,6 +310,29 @@ export default function SecureReaderScreen() {
   }, [id]);
 
   const { outline, hasOutline, loading: outlineLoading } = usePdfOutline(pdfDocument);
+
+  // Auto-refresh signed URL before expiry
+  const handleUrlRefreshed = useCallback((newUrl: string, newExpiresAt: number) => {
+    setContent(prev => prev ? {
+      ...prev,
+      signedUrl: newUrl,
+      expiresAt: newExpiresAt,
+    } : null);
+  }, []);
+
+  const handleUrlRefreshError = useCallback((error: Error) => {
+    console.error('Failed to refresh signed URL:', error);
+    // Don't set error state - let the user continue reading with existing URL
+  }, []);
+
+  useSignedUrlRefresh({
+    contentId: id,
+    initialUrl: content?.signedUrl || null,
+    initialExpiresAt: content?.expiresAt || null,
+    enabled: !!content && numPages > 0,
+    onUrlRefreshed: handleUrlRefreshed,
+    onRefreshError: handleUrlRefreshError,
+  });
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const onDocumentLoadSuccess = useCallback(({ numPages: pages }: { numPages: number }, doc?: any) => {
@@ -512,7 +539,7 @@ export default function SecureReaderScreen() {
         >
           <div
             ref={pdfWrapperRef}
-            className="flex flex-col items-center py-4 gap-4"
+            className="flex flex-col items-center"
             style={{
               transform: `translate(${transform.translateX}px, ${transform.translateY}px) scale(${transform.scale})`,
               transformOrigin: 'top center',
@@ -537,44 +564,16 @@ export default function SecureReaderScreen() {
                   </div>
                 }
               >
-                {Array.from({ length: numPages }, (_, index) => {
-                  const pageNumber = index + 1;
-                  return (
-                    <div key={pageNumber} className="flex flex-col items-center">
-                      {/* Page break indicator */}
-                      {pageNumber > 1 && (
-                        <div className="w-full flex items-center gap-3 py-3 px-4 mb-4">
-                          <div className="flex-1 h-px bg-border" />
-                          <span className="text-xs font-medium text-muted-foreground bg-muted/50 px-3 py-1 rounded-full">
-                            Page {pageNumber}
-                          </span>
-                          <div className="flex-1 h-px bg-border" />
-                        </div>
-                      )}
-                      <div
-                        data-page={pageNumber}
-                        ref={(el) => registerPage(pageNumber, el)}
-                        className="flex justify-center"
-                      >
-                        <Page
-                          pageNumber={pageNumber}
-                          width={pageWidth}
-                          renderTextLayer={false}
-                          renderAnnotationLayer={false}
-                          className="shadow-[var(--shadow-lg)] rounded-sm"
-                          loading={
-                            <div 
-                              className="flex items-center justify-center bg-muted/30 rounded-sm"
-                              style={{ width: pageWidth, height: pageWidth * 1.4 }}
-                            >
-                              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                            </div>
-                          }
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
+                {numPages > 0 && id && (
+                  <VirtualizedPdfViewer
+                    numPages={numPages}
+                    pageWidth={pageWidth}
+                    registerPage={registerPage}
+                    pdfDocument={pdfDocument}
+                    contentId={id}
+                    scrollContainerRef={scrollContainerRef}
+                  />
+                )}
               </Document>
             )}
           </div>

@@ -120,9 +120,10 @@ serve(async (req) => {
 
     // Generate a short-lived signed URL (5 minutes) for the PDF
     // This avoids loading the entire file into memory
+    const urlExpirySeconds = 300; // 5 minutes
     const { data: signedUrlData, error: signedUrlError } = await adminClient.storage
       .from("content-files")
-      .createSignedUrl(content.file_path, 300); // 5 minutes expiry
+      .createSignedUrl(content.file_path, urlExpirySeconds);
 
     if (signedUrlError || !signedUrlData?.signedUrl) {
       console.error("Failed to create signed URL:", signedUrlError);
@@ -131,6 +132,9 @@ serve(async (req) => {
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    // Calculate expiry timestamp for client-side refresh logic
+    const expiresAt = Date.now() + (urlExpirySeconds * 1000);
 
     // Generate watermark data with user info and timestamp
     const watermarkData = {
@@ -144,6 +148,7 @@ serve(async (req) => {
       JSON.stringify({
         success: true,
         signedUrl: signedUrlData.signedUrl,
+        expiresAt, // Client can use this to refresh before expiry
         title: content.title,
         watermark: watermarkData,
         pageRequested: page_number,
