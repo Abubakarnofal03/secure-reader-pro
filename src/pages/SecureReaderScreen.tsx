@@ -537,7 +537,14 @@ export default function SecureReaderScreen() {
         >
           <div
             ref={pdfWrapperRef}
-            className="flex flex-col items-center min-w-max"
+            className="py-4"
+            style={{
+              // When zoomed, set explicit width to enable full horizontal scroll
+              // Add padding so content can be scrolled to edges
+              width: scale > 1 ? `${Math.round(pageWidth * scale) + 32}px` : '100%',
+              paddingLeft: scale > 1 ? '16px' : '0',
+              paddingRight: scale > 1 ? '16px' : '0',
+            }}
           >
             {pdfSource && (
               <Document
