@@ -569,8 +569,6 @@ export default function SecureReaderScreen() {
                     numPages={numPages}
                     pageWidth={pageWidth}
                     registerPage={registerPage}
-                    pdfDocument={pdfDocument}
-                    contentId={id}
                     scrollContainerRef={scrollContainerRef}
                   />
                 )}
