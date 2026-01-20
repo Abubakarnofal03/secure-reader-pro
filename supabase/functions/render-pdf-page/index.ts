@@ -25,22 +25,25 @@ serve(async (req) => {
       );
     }
 
-    // Create client with user's auth token for RLS
+    // Create client with user's auth token
     const supabaseClient = createClient(supabaseUrl, supabaseServiceKey, {
       global: { headers: { Authorization: authHeader } },
     });
 
-    // Get user from token
-    const { data: { user }, error: authError } = await supabaseClient.auth.getUser(
-      authHeader.replace("Bearer ", "")
-    );
+    // Validate the token by getting the user
+    const token = authHeader.replace("Bearer ", "");
+    const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token);
 
     if (authError || !user) {
+      console.error("Token validation failed:", authError?.message || "No user found");
       return new Response(
         JSON.stringify({ error: "Invalid or expired token" }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    const userId = user.id;
+    const userEmail = user.email || "";
 
     // Parse request body
     const { content_id, page_number, device_id } = await req.json();
@@ -56,7 +59,7 @@ serve(async (req) => {
     const { data: profile, error: profileError } = await supabaseClient
       .from("profiles")
       .select("active_device_id, email, name, role")
-      .eq("id", user.id)
+      .eq("id", userId)
       .single();
 
     if (profileError || !profile) {
@@ -85,7 +88,7 @@ serve(async (req) => {
       const { data: access, error: accessError } = await adminClient
         .from("user_content_access")
         .select("id")
-        .eq("user_id", user.id)
+        .eq("user_id", userId)
         .eq("content_id", content_id)
         .single();
 
