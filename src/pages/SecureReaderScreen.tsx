@@ -531,19 +531,17 @@ export default function SecureReaderScreen() {
         
         <div 
           ref={scrollContainerRef}
-          className="h-full overflow-y-auto overflow-x-hidden"
+          className="h-full overflow-y-auto overflow-x-hidden overscroll-contain"
           style={{
-            pointerEvents: 'auto',
-            touchAction: scale > 1 ? 'none' : 'pan-y',
+            WebkitOverflowScrolling: 'touch',
           }}
         >
           <div
             ref={pdfWrapperRef}
             className="flex flex-col items-center"
             style={{
-              transform: `translateX(${transform.translateX}px) scale(${transform.scale})`,
+              transform: `scale(${transform.scale})`,
               transformOrigin: 'top center',
-              transition: 'none',
               willChange: 'transform',
             }}
           >
