@@ -81,7 +81,9 @@ export function usePinchZoom({
 
   const handleTouchStart = useCallback((e: TouchEvent) => {
     if (e.touches.length === 2) {
+      // Prevent default browser behavior (pull-to-refresh, etc.)
       e.preventDefault();
+      e.stopPropagation();
       
       const t1 = e.touches[0];
       const t2 = e.touches[1];
@@ -96,14 +98,22 @@ export function usePinchZoom({
       
       liveGestureScale.current = 1;
       
+      // Set touch-action to none on the container during gesture
+      const container = containerRef.current;
+      if (container) {
+        container.style.touchAction = 'none';
+      }
+      
       setState(prev => ({ ...prev, isGesturing: true, gestureScale: 1 }));
     }
-  }, [state.committedScale, getDistance, getCenter]);
+  }, [state.committedScale, getDistance, getCenter, containerRef]);
 
   const handleTouchMove = useCallback((e: TouchEvent) => {
     if (e.touches.length !== 2 || !gestureRef.current) return;
     
+    // Prevent default to stop browser zoom/scroll
     e.preventDefault();
+    e.stopPropagation();
     
     const currentDistance = getDistance(e.touches[0], e.touches[1]);
     const scaleRatio = currentDistance / gestureRef.current.initialDistance;
@@ -132,6 +142,12 @@ export function usePinchZoom({
   }, [getDistance, minScale, maxScale]);
 
   const handleTouchEnd = useCallback((e: TouchEvent) => {
+    // Restore touch-action on the container
+    const container = containerRef.current;
+    if (container) {
+      container.style.touchAction = '';
+    }
+    
     if (e.touches.length === 0 && gestureRef.current) {
       // Cancel any pending RAF
       if (rafId.current !== null) {
@@ -188,6 +204,12 @@ export function usePinchZoom({
   }, [minScale, maxScale, containerRef, scrollContainerRef, preserveScrollPosition]);
 
   const handleTouchCancel = useCallback(() => {
+    // Restore touch-action on the container
+    const container = containerRef.current;
+    if (container) {
+      container.style.touchAction = '';
+    }
+    
     if (rafId.current !== null) {
       cancelAnimationFrame(rafId.current);
       rafId.current = null;
@@ -195,7 +217,7 @@ export function usePinchZoom({
     gestureRef.current = null;
     liveGestureScale.current = 1;
     setState(prev => ({ ...prev, isGesturing: false, gestureScale: 1 }));
-  }, []);
+  }, [containerRef]);
 
   // Mouse wheel zoom (Ctrl/Cmd + scroll) for desktop
   const handleWheel = useCallback((e: WheelEvent) => {

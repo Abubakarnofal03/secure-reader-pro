@@ -93,17 +93,19 @@ export default function SecureReaderScreen() {
   });
 
   // Hybrid pinch zoom - gesture for instant feedback, commit for crisp render
+  // Use contentRef for touch detection (not scroll container) to avoid conflicts
   const { 
     scale, 
     visualScale,
-    gestureTransform, 
+    gestureTransform,
+    isGesturing,
     zoomIn, 
     zoomOut, 
     resetZoom,
   } = usePinchZoom({
     minScale: 1,
     maxScale: 2,
-    containerRef: scrollContainerRef as React.RefObject<HTMLElement>,
+    containerRef: contentRef as React.RefObject<HTMLElement>,
     scrollContainerRef: scrollContainerRef as React.RefObject<HTMLElement>,
   });
 
@@ -535,6 +537,10 @@ export default function SecureReaderScreen() {
       <main 
         ref={contentRef}
         className="relative flex-1 overflow-hidden"
+        style={{
+          // Disable browser gestures during pinch to prevent page refresh
+          touchAction: isGesturing ? 'none' : 'pan-y pinch-zoom',
+        }}
       >
         <Watermark sessionId={sessionId} />
         
@@ -546,9 +552,11 @@ export default function SecureReaderScreen() {
         
         <div 
           ref={scrollContainerRef}
-          className="h-full overflow-auto overscroll-contain scroll-smooth"
+          className="h-full overflow-auto overscroll-none scroll-smooth"
           style={{
             WebkitOverflowScrolling: 'touch',
+            // Prevent pull-to-refresh
+            overscrollBehavior: 'none',
           }}
         >
           <div
