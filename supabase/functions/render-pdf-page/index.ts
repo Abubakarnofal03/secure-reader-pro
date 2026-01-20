@@ -121,9 +121,9 @@ serve(async (req) => {
       );
     }
 
-    // Generate a short-lived signed URL (5 minutes) for the PDF
+    // Generate a signed URL (90 minutes) for better reading sessions
     // This avoids loading the entire file into memory
-    const urlExpirySeconds = 300; // 5 minutes
+    const urlExpirySeconds = 5400; // 90 minutes
     const { data: signedUrlData, error: signedUrlError } = await adminClient.storage
       .from("content-files")
       .createSignedUrl(content.file_path, urlExpirySeconds);
