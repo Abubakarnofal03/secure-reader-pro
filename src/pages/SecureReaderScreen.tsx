@@ -88,11 +88,19 @@ export default function SecureReaderScreen() {
     totalPages: numPages,
   });
 
-  // Pinch zoom - re-render approach (no CSS transform)
-  const { zoomIn, zoomOut, resetZoom, scale } = usePinchZoom({
+  // Hybrid pinch zoom - gesture for instant feedback, commit for crisp render
+  const { 
+    scale, 
+    visualScale,
+    gestureTransform, 
+    zoomIn, 
+    zoomOut, 
+    resetZoom,
+  } = usePinchZoom({
     minScale: 1,
     maxScale: 2,
     containerRef: scrollContainerRef as React.RefObject<HTMLElement>,
+    scrollContainerRef: scrollContainerRef as React.RefObject<HTMLElement>,
   });
 
   const pageWidth = baseWidth;
@@ -501,7 +509,7 @@ export default function SecureReaderScreen() {
               className="px-2 py-1 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors min-w-[3rem] rounded-lg hover:bg-card"
               title="Reset zoom"
             >
-              {Math.round(scale * 100)}%
+              {Math.round(visualScale * 100)}%
             </button>
             <button
               onClick={zoomIn}
@@ -530,20 +538,18 @@ export default function SecureReaderScreen() {
         
         <div 
           ref={scrollContainerRef}
-          className="h-full overflow-y-auto overflow-x-auto overscroll-contain"
+          className="h-full overflow-auto overscroll-contain scroll-smooth"
           style={{
             WebkitOverflowScrolling: 'touch',
           }}
         >
           <div
             ref={pdfWrapperRef}
-            className="py-4"
+            className="py-4 min-h-full"
             style={{
-              // When zoomed, set explicit width to enable full horizontal scroll
-              // Add padding so content can be scrolled to edges
+              // Set explicit width for horizontal scrolling when zoomed
               width: scale > 1 ? `${Math.round(pageWidth * scale) + 32}px` : '100%',
-              paddingLeft: scale > 1 ? '16px' : '0',
-              paddingRight: scale > 1 ? '16px' : '0',
+              minWidth: '100%',
             }}
           >
             {pdfSource && (
@@ -571,6 +577,7 @@ export default function SecureReaderScreen() {
                     scale={scale}
                     registerPage={registerPage}
                     scrollContainerRef={scrollContainerRef}
+                    gestureTransform={gestureTransform}
                   />
                 )}
               </Document>
