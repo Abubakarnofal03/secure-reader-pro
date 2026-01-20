@@ -65,6 +65,10 @@ export default function SecureReaderScreen() {
   const [pdfDocument, setPdfDocument] = useState<any>(null);
   const [showToc, setShowToc] = useState(false);
   const [contentCategory, setContentCategory] = useState<string | null>(null);
+  
+  // Store the PDF URL in a ref so refreshes don't trigger re-renders
+  const pdfUrlRef = useRef<string | null>(null);
+  const expiresAtRef = useRef<number | null>(null);
 
   const { 
     containerRef: scrollContainerRef, 
@@ -281,6 +285,10 @@ export default function SecureReaderScreen() {
 
         setLoadingProgress(90);
 
+        // Store URL in refs to avoid re-renders on refresh
+        pdfUrlRef.current = data.signedUrl;
+        expiresAtRef.current = data.expiresAt || Date.now() + (5 * 60 * 1000);
+
         setContent({
           title: data.title,
           signedUrl: data.signedUrl,
@@ -318,13 +326,13 @@ export default function SecureReaderScreen() {
 
   const { outline, hasOutline, loading: outlineLoading } = usePdfOutline(pdfDocument);
 
-  // Auto-refresh signed URL before expiry
+  // Auto-refresh signed URL before expiry - update refs only (no re-render)
   const handleUrlRefreshed = useCallback((newUrl: string, newExpiresAt: number) => {
-    setContent(prev => prev ? {
-      ...prev,
-      signedUrl: newUrl,
-      expiresAt: newExpiresAt,
-    } : null);
+    console.log('[SecureReader] URL refreshed silently, no reload needed');
+    pdfUrlRef.current = newUrl;
+    expiresAtRef.current = newExpiresAt;
+    // Don't call setContent - the PDF.js document already has the file loaded
+    // The new URL is stored in refs for any future page requests
   }, []);
 
   const handleUrlRefreshError = useCallback((error: Error) => {
@@ -334,8 +342,8 @@ export default function SecureReaderScreen() {
 
   useSignedUrlRefresh({
     contentId: id,
-    initialUrl: content?.signedUrl || null,
-    initialExpiresAt: content?.expiresAt || null,
+    initialUrl: pdfUrlRef.current,
+    initialExpiresAt: expiresAtRef.current,
     enabled: !!content && numPages > 0,
     onUrlRefreshed: handleUrlRefreshed,
     onRefreshError: handleUrlRefreshError,
