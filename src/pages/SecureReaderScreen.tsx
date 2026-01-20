@@ -61,6 +61,7 @@ export default function SecureReaderScreen() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [pdfDocument, setPdfDocument] = useState<any>(null);
   const [showToc, setShowToc] = useState(false);
+  const [contentCategory, setContentCategory] = useState<string | null>(null);
 
   const { 
     containerRef: scrollContainerRef, 
@@ -287,7 +288,23 @@ export default function SecureReaderScreen() {
     fetchSecureContent();
   }, [id, signOut, navigate, checkingAccess, hasAccess]);
 
-  const { outline, hasOutline } = usePdfOutline(pdfDocument);
+  // Fetch content category
+  useEffect(() => {
+    const fetchCategory = async () => {
+      if (!id) return;
+      const { data } = await supabase
+        .from('content')
+        .select('category')
+        .eq('id', id)
+        .single();
+      if (data?.category) {
+        setContentCategory(data.category);
+      }
+    };
+    fetchCategory();
+  }, [id]);
+
+  const { outline, hasOutline, loading: outlineLoading } = usePdfOutline(pdfDocument);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const onDocumentLoadSuccess = useCallback(({ numPages: pages }: { numPages: number }, doc?: any) => {
@@ -407,6 +424,8 @@ export default function SecureReaderScreen() {
         currentPage={currentPage}
         onNavigate={goToPage}
         hasOutline={hasOutline}
+        isLoading={outlineLoading}
+        category={contentCategory || undefined}
       />
 
       {/* Premium Reader Header */}
@@ -520,27 +539,38 @@ export default function SecureReaderScreen() {
                 {Array.from({ length: numPages }, (_, index) => {
                   const pageNumber = index + 1;
                   return (
-                    <div
-                      key={pageNumber}
-                      data-page={pageNumber}
-                      ref={(el) => registerPage(pageNumber, el)}
-                      className="flex justify-center"
-                    >
-                      <Page
-                        pageNumber={pageNumber}
-                        width={pageWidth}
-                        renderTextLayer={false}
-                        renderAnnotationLayer={false}
-                        className="shadow-[var(--shadow-lg)] rounded-sm"
-                        loading={
-                          <div 
-                            className="flex items-center justify-center bg-muted/30 rounded-sm"
-                            style={{ width: pageWidth, height: pageWidth * 1.4 }}
-                          >
-                            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                          </div>
-                        }
-                      />
+                    <div key={pageNumber} className="flex flex-col items-center">
+                      {/* Page break indicator */}
+                      {pageNumber > 1 && (
+                        <div className="w-full flex items-center gap-3 py-3 px-4 mb-4">
+                          <div className="flex-1 h-px bg-border" />
+                          <span className="text-xs font-medium text-muted-foreground bg-muted/50 px-3 py-1 rounded-full">
+                            Page {pageNumber}
+                          </span>
+                          <div className="flex-1 h-px bg-border" />
+                        </div>
+                      )}
+                      <div
+                        data-page={pageNumber}
+                        ref={(el) => registerPage(pageNumber, el)}
+                        className="flex justify-center"
+                      >
+                        <Page
+                          pageNumber={pageNumber}
+                          width={pageWidth}
+                          renderTextLayer={false}
+                          renderAnnotationLayer={false}
+                          className="shadow-[var(--shadow-lg)] rounded-sm"
+                          loading={
+                            <div 
+                              className="flex items-center justify-center bg-muted/30 rounded-sm"
+                              style={{ width: pageWidth, height: pageWidth * 1.4 }}
+                            >
+                              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                            </div>
+                          }
+                        />
+                      </div>
                     </div>
                   );
                 })}
