@@ -36,46 +36,46 @@ const PdfPage = memo(({
   }, [pageNumber, registerPage]);
 
   return (
-    <div className="flex flex-col items-center w-full">
-      {/* Page break indicator */}
+    <div
+      data-page={pageNumber}
+      ref={pageRef}
+      className="flex flex-col items-center"
+      style={{ width: scaledWidth }}
+    >
+      {/* Page break indicator - subtle, positioned above the page */}
       {pageNumber > 1 && (
-        <div className="w-full flex items-center gap-3 py-3 px-4 mb-4">
-          <div className="flex-1 h-px bg-border" />
-          <span className="text-xs font-medium text-muted-foreground bg-muted/50 px-3 py-1 rounded-full">
-            Page {pageNumber}
+        <div 
+          className="flex items-center justify-center py-2 mb-1"
+          style={{ width: scaledWidth }}
+        >
+          <span className="text-[10px] font-medium text-muted-foreground/40">
+            — {pageNumber} —
           </span>
-          <div className="flex-1 h-px bg-border" />
         </div>
       )}
-      <div
-        data-page={pageNumber}
-        ref={pageRef}
-        className="flex justify-center"
-      >
-        <Page
-          pageNumber={pageNumber}
-          width={scaledWidth}
-          renderTextLayer={false}
-          renderAnnotationLayer={false}
-          className="shadow-[var(--shadow-lg)] rounded-sm"
-          loading={
-            <div 
-              className="flex items-center justify-center bg-muted/30 rounded-sm"
-              style={{ width: scaledWidth, height: estimatedHeight }}
-            >
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            </div>
-          }
-          error={
-            <div 
-              className="flex items-center justify-center bg-destructive/10 rounded-sm"
-              style={{ width: scaledWidth, height: estimatedHeight }}
-            >
-              <span className="text-xs text-destructive">Failed to load page</span>
-            </div>
-          }
-        />
-      </div>
+      <Page
+        pageNumber={pageNumber}
+        width={scaledWidth}
+        renderTextLayer={false}
+        renderAnnotationLayer={false}
+        className="shadow-[var(--shadow-lg)] rounded-sm"
+        loading={
+          <div 
+            className="flex items-center justify-center bg-muted/30 rounded-sm"
+            style={{ width: scaledWidth, height: estimatedHeight }}
+          >
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        }
+        error={
+          <div 
+            className="flex items-center justify-center bg-destructive/10 rounded-sm"
+            style={{ width: scaledWidth, height: estimatedHeight }}
+          >
+            <span className="text-xs text-destructive">Failed to load page</span>
+          </div>
+        }
+      />
     </div>
   );
 }, (prevProps, nextProps) => {
@@ -100,8 +100,8 @@ export function VirtualizedPdfViewer({
   const scaledWidth = Math.round(pageWidth * scale);
   const scaledHeight = Math.round(scaledWidth * 1.4); // Maintain aspect ratio
   
-  // Total height per item including page break indicator (60px) 
-  const estimatedPageHeight = scaledHeight + 60;
+  // Total height per item including page break indicator (40px) 
+  const estimatedPageHeight = scaledHeight + 40;
 
   // Wait for scroll container to be available
   useEffect(() => {
@@ -137,9 +137,12 @@ export function VirtualizedPdfViewer({
 
   return (
     <div
-      className="relative w-full"
+      className="relative"
       style={{
         height: virtualizer.getTotalSize(),
+        // Set explicit width to allow proper horizontal scrolling
+        width: scaledWidth,
+        margin: '0 auto',
       }}
     >
       {virtualItems.map((virtualItem) => {
@@ -149,9 +152,10 @@ export function VirtualizedPdfViewer({
           <div
             key={`page-${pageNumber}-${scale}`}
             data-index={virtualItem.index}
-            className="absolute top-0 left-0 w-full flex justify-center"
+            className="absolute top-0 left-0"
             style={{
               transform: `translateY(${virtualItem.start}px)`,
+              width: scaledWidth,
             }}
           >
             <PdfPage
