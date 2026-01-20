@@ -3,7 +3,6 @@ import { useRef, useCallback, useEffect, useState } from 'react';
 // Safe check for Capacitor - avoids crashes when not available
 const isNativePlatform = (): boolean => {
   try {
-    // Dynamic import check for Capacitor
     if (typeof window !== 'undefined' && (window as any).Capacitor) {
       return (window as any).Capacitor.isNativePlatform?.() ?? false;
     }
@@ -38,15 +37,17 @@ export function usePinchZoom({
     translateY: 0,
   });
 
-  // Track if we're on a native platform
   const isNative = isNativePlatform();
 
   // Gesture state refs
   const initialPinch = useRef<{
     distance: number;
     scale: number;
-    centerX: number;
-    centerY: number;
+    // Focal point in document coordinates (scroll + client position)
+    focalX: number;
+    focalY: number;
+    scrollTop: number;
+    scrollLeft: number;
     translateX: number;
     translateY: number;
   } | null>(null);
@@ -78,108 +79,23 @@ export function usePinchZoom({
     };
   }, []);
 
-  // Store initial content dimensions once set - initialize immediately as ready
-  const initialContentSize = useRef<{ width: number; height: number } | null>(null);
-  const contentInitialized = useRef(true); // Start as true to allow immediate gestures
-  const listenersAttached = useRef(false);
-
-  // Force re-initialization when scale changes from button interaction
-  const forceInit = useCallback(() => {
-    const content = contentRef.current;
-    if (!content) return;
+  // Clamp horizontal translation to prevent panning beyond content bounds
+  const clampTranslateX = useCallback((
+    translateX: number,
+    scale: number,
+    containerWidth: number,
+    contentWidth: number
+  ): number => {
+    const scaledWidth = contentWidth * scale;
     
-    const rect = content.getBoundingClientRect();
-    if (rect.width > 0 && rect.height > 0) {
-      // Account for current scale when capturing initial size
-      const currentScale = transform.scale || 1;
-      initialContentSize.current = {
-        width: rect.width / currentScale,
-        height: rect.height / currentScale,
-      };
-      contentInitialized.current = true;
-    }
-  }, [contentRef, transform.scale]);
-
-  // Initialize content size on mount/content change
-  useEffect(() => {
-    const content = contentRef.current;
-    if (!content) return;
-    
-    const initContentSize = () => {
-      const rect = content.getBoundingClientRect();
-      if (rect.width > 0 && rect.height > 0 && !contentInitialized.current) {
-        initialContentSize.current = {
-          width: rect.width,
-          height: rect.height,
-        };
-        contentInitialized.current = true;
-      }
-    };
-    
-    // Try immediately
-    initContentSize();
-    
-    // Also try after a short delay (for dynamically loaded content like PDFs)
-    const timeoutId = setTimeout(initContentSize, 500);
-    
-    // Also observe for changes if not ready yet
-    const observer = new ResizeObserver(() => {
-      if (!contentInitialized.current) {
-        initContentSize();
-      }
-    });
-    observer.observe(content);
-    
-    // Also observe mutations (new children added)
-    const mutationObserver = new MutationObserver(() => {
-      if (!contentInitialized.current) {
-        initContentSize();
-      }
-    });
-    mutationObserver.observe(content, { childList: true, subtree: true });
-    
-    return () => {
-      clearTimeout(timeoutId);
-      observer.disconnect();
-      mutationObserver.disconnect();
-    };
-  }, [contentRef]);
-
-  const clampTransform = useCallback((
-    newTransform: TransformState, 
-    containerRect: DOMRect, 
-    contentRect: DOMRect,
-    currentScale: number = 1
-  ): TransformState => {
-    const { scale, translateX, translateY } = newTransform;
-    
-    // Use stored initial dimensions or calculate from current
-    const originalWidth = initialContentSize.current?.width ?? contentRect.width / Math.max(currentScale, 1);
-    const originalHeight = initialContentSize.current?.height ?? contentRect.height / Math.max(currentScale, 1);
-    
-    const scaledWidth = originalWidth * scale;
-    const scaledHeight = originalHeight * scale;
-    
-    let clampedX = translateX;
-    let clampedY = translateY;
-    
-    // If content is smaller than or equal to container, center it
-    if (scaledWidth <= containerRect.width) {
-      clampedX = 0;
-    } else {
-      // Allow panning within the scaled content bounds
-      const maxX = (scaledWidth - containerRect.width) / 2;
-      clampedX = Math.max(-maxX, Math.min(maxX, translateX));
+    // If content fits in container, center it
+    if (scaledWidth <= containerWidth) {
+      return 0;
     }
     
-    if (scaledHeight <= containerRect.height) {
-      clampedY = 0;
-    } else {
-      const maxY = (scaledHeight - containerRect.height) / 2;
-      clampedY = Math.max(-maxY, Math.min(maxY, translateY));
-    }
-    
-    return { scale, translateX: clampedX, translateY: clampedY };
+    // Allow panning within scaled content bounds
+    const maxX = (scaledWidth - containerWidth) / 2;
+    return Math.max(-maxX, Math.min(maxX, translateX));
   }, []);
 
   const handleTouchStart = useCallback((e: TouchEvent) => {
@@ -187,21 +103,7 @@ export function usePinchZoom({
     const content = contentRef.current;
     if (!container || !content) return;
 
-    // Always initialize/update content dimensions on touch for accurate zoom
-    const rect = content.getBoundingClientRect();
-    if (rect.width > 0 && rect.height > 0) {
-      // If already scaled, calculate original size
-      const currentScale = transform.scale || 1;
-      if (!initialContentSize.current) {
-        initialContentSize.current = {
-          width: rect.width / currentScale,
-          height: rect.height / currentScale,
-        };
-      }
-      contentInitialized.current = true;
-    }
-
-    // Pinch start (two fingers) - handle immediately without waiting
+    // Pinch start (two fingers)
     if (e.touches.length === 2) {
       e.preventDefault();
       e.stopPropagation();
@@ -212,11 +114,17 @@ export function usePinchZoom({
       const center = getCenter(e.touches);
       const containerRect = container.getBoundingClientRect();
       
+      // Calculate focal point relative to container viewport
+      const viewportX = center.x - containerRect.left;
+      const viewportY = center.y - containerRect.top;
+      
       initialPinch.current = {
         distance: getDistance(e.touches),
         scale: transform.scale,
-        centerX: center.x - containerRect.left - containerRect.width / 2,
-        centerY: center.y - containerRect.top - containerRect.height / 2,
+        focalX: viewportX,
+        focalY: viewportY,
+        scrollTop: container.scrollTop,
+        scrollLeft: container.scrollLeft,
         translateX: transform.translateX,
         translateY: transform.translateY,
       };
@@ -241,28 +149,40 @@ export function usePinchZoom({
           e.stopPropagation();
           
           const containerRect = container.getBoundingClientRect();
-          const contentRect = content.getBoundingClientRect();
+          const viewportX = touch.clientX - containerRect.left;
+          const viewportY = touch.clientY - containerRect.top;
           
           if (transform.scale > 1.1) {
-            // Zoom out to 1
+            // Zoom out to 1 - reset everything
             setTransform({ scale: 1, translateX: 0, translateY: 0 });
           } else {
             // Zoom in to 2.5x centered on tap point
             const newScale = 2.5;
-            const tapX = touch.clientX - containerRect.left - containerRect.width / 2;
-            const tapY = touch.clientY - containerRect.top - containerRect.height / 2;
+            const oldScale = transform.scale;
             
-            // Calculate offset to zoom towards tap point
-            const newTranslateX = -tapX * (newScale - 1);
-            const newTranslateY = -tapY * (newScale - 1);
+            // Calculate document position of tap (accounting for scroll + current transform)
+            const docX = (container.scrollLeft + viewportX - transform.translateX) / oldScale;
+            const docY = (container.scrollTop + viewportY - transform.translateY) / oldScale;
             
-            const clamped = clampTransform(
-              { scale: newScale, translateX: newTranslateX, translateY: newTranslateY },
-              containerRect,
-              contentRect,
-              transform.scale
-            );
-            setTransform(clamped);
+            // Calculate new scroll position to keep tap point in same viewport position
+            const newScrollTop = docY * newScale - viewportY;
+            const newScrollLeft = docX * newScale - viewportX;
+            
+            // Center horizontally with translateX
+            const containerWidth = containerRect.width;
+            const contentWidth = content.scrollWidth / oldScale;
+            const newTranslateX = clampTranslateX(0, newScale, containerWidth, contentWidth);
+            
+            setTransform({ 
+              scale: newScale, 
+              translateX: newTranslateX, 
+              translateY: 0 
+            });
+            
+            // Adjust scroll after transform applies
+            requestAnimationFrame(() => {
+              container.scrollTop = Math.max(0, newScrollTop);
+            });
           }
           
           lastTapTime.current = 0;
@@ -285,7 +205,7 @@ export function usePinchZoom({
         };
       }
     }
-  }, [containerRef, contentRef, transform, getDistance, getCenter, clampTransform]);
+  }, [containerRef, contentRef, transform, getDistance, getCenter, clampTranslateX]);
 
   const handleTouchMove = useCallback((e: TouchEvent) => {
     const container = containerRef.current;
@@ -302,57 +222,57 @@ export function usePinchZoom({
       let newScale = initialPinch.current.scale * scaleChange;
       newScale = Math.max(minScale, Math.min(maxScale, newScale));
       
-      const center = getCenter(e.touches);
+      const oldScale = initialPinch.current.scale;
+      const { focalX, focalY, scrollTop, scrollLeft, translateX: oldTranslateX } = initialPinch.current;
+      
+      // Calculate document position of focal point at initial scale
+      const docX = (scrollLeft + focalX - oldTranslateX) / oldScale;
+      const docY = (scrollTop + focalY) / oldScale;
+      
+      // Calculate new scroll position to keep focal point stationary
+      const newScrollTop = docY * newScale - focalY;
+      const newScrollLeft = docX * newScale - focalX;
+      
+      // Update horizontal centering
       const containerRect = container.getBoundingClientRect();
-      const contentRect = content.getBoundingClientRect();
+      const contentWidth = content.scrollWidth / transform.scale;
+      const newTranslateX = clampTranslateX(0, newScale, containerRect.width, contentWidth);
       
-      const currentCenterX = center.x - containerRect.left - containerRect.width / 2;
-      const currentCenterY = center.y - containerRect.top - containerRect.height / 2;
+      setTransform({
+        scale: newScale,
+        translateX: newTranslateX,
+        translateY: 0,
+      });
       
-      // Calculate new translation to keep pinch center fixed
-      const scaleDiff = newScale / initialPinch.current.scale;
-      const newTranslateX = currentCenterX - (initialPinch.current.centerX - initialPinch.current.translateX) * scaleDiff;
-      const newTranslateY = currentCenterY - (initialPinch.current.centerY - initialPinch.current.translateY) * scaleDiff;
+      // Adjust scroll to keep focal point in place
+      container.scrollTop = Math.max(0, newScrollTop);
       
-      const clamped = clampTransform(
-        { scale: newScale, translateX: newTranslateX, translateY: newTranslateY },
-        containerRect,
-        contentRect,
-        initialPinch.current.scale
-      );
-      
-      setTransform(clamped);
       return;
     }
     
-    // Handle single finger pan when zoomed in
+    // Handle single finger pan when zoomed in (horizontal panning only, vertical is natural scroll)
     if (e.touches.length === 1 && isPanning.current && panStart.current && transform.scale > 1) {
-      e.preventDefault();
-      e.stopPropagation();
-      
       const touch = e.touches[0];
       const deltaX = touch.clientX - panStart.current.x;
-      const deltaY = touch.clientY - panStart.current.y;
       
       const containerRect = container.getBoundingClientRect();
-      const contentRect = content.getBoundingClientRect();
+      const contentWidth = content.scrollWidth / transform.scale;
       
-      const newTranslateX = panStart.current.translateX + deltaX;
-      const newTranslateY = panStart.current.translateY + deltaY;
-      
-      const clamped = clampTransform(
-        { scale: transform.scale, translateX: newTranslateX, translateY: newTranslateY },
-        containerRect,
-        contentRect,
-        transform.scale
+      const newTranslateX = clampTranslateX(
+        panStart.current.translateX + deltaX,
+        transform.scale,
+        containerRect.width,
+        contentWidth
       );
       
-      setTransform(clamped);
+      setTransform(prev => ({
+        ...prev,
+        translateX: newTranslateX,
+      }));
     }
-  }, [containerRef, contentRef, transform.scale, getDistance, getCenter, minScale, maxScale, clampTransform]);
+  }, [containerRef, contentRef, transform.scale, getDistance, minScale, maxScale, clampTranslateX]);
 
   const handleTouchEnd = useCallback((e: TouchEvent) => {
-    // If we still have touches, update state accordingly
     if (e.touches.length < 2) {
       initialPinch.current = null;
       isPinching.current = false;
@@ -396,49 +316,49 @@ export function usePinchZoom({
     if (!container || !content) return;
     
     const containerRect = container.getBoundingClientRect();
-    const contentRect = content.getBoundingClientRect();
-    
     const delta = e.deltaY > 0 ? 0.9 : 1.1;
     let newScale = transform.scale * delta;
     newScale = Math.max(minScale, Math.min(maxScale, newScale));
     
-    // Zoom towards mouse position
-    const mouseX = e.clientX - containerRect.left - containerRect.width / 2;
-    const mouseY = e.clientY - containerRect.top - containerRect.height / 2;
+    const oldScale = transform.scale;
     
-    const scaleChange = newScale / transform.scale;
-    const newTranslateX = mouseX - (mouseX - transform.translateX) * scaleChange;
-    const newTranslateY = mouseY - (mouseY - transform.translateY) * scaleChange;
+    // Focal point in viewport
+    const viewportX = e.clientX - containerRect.left;
+    const viewportY = e.clientY - containerRect.top;
     
-    const clamped = clampTransform(
-      { scale: newScale, translateX: newTranslateX, translateY: newTranslateY },
-      containerRect,
-      contentRect,
-      transform.scale
-    );
+    // Calculate document position of focal point
+    const docX = (container.scrollLeft + viewportX - transform.translateX) / oldScale;
+    const docY = (container.scrollTop + viewportY) / oldScale;
     
-    setTransform(clamped);
-  }, [containerRef, contentRef, transform, minScale, maxScale, clampTransform]);
+    // Calculate new scroll to keep focal point stationary
+    const newScrollTop = docY * newScale - viewportY;
+    
+    const contentWidth = content.scrollWidth / oldScale;
+    const newTranslateX = clampTranslateX(0, newScale, containerRect.width, contentWidth);
+    
+    setTransform({
+      scale: newScale,
+      translateX: newTranslateX,
+      translateY: 0,
+    });
+    
+    container.scrollTop = Math.max(0, newScrollTop);
+  }, [containerRef, contentRef, transform, minScale, maxScale, clampTranslateX]);
 
   // Prevent default gestures on native platforms
   useEffect(() => {
     if (!isNative) return;
 
-    // Disable default zoom on the document for native apps
-    const preventDefaultGestures = (e: Event) => {
-      if ((e as TouchEvent).touches?.length >= 2) {
-        e.preventDefault();
-      }
-    };
-
-    document.addEventListener('gesturestart', (e) => e.preventDefault());
-    document.addEventListener('gesturechange', (e) => e.preventDefault());
-    document.addEventListener('gestureend', (e) => e.preventDefault());
+    const preventGesture = (e: Event) => e.preventDefault();
+    
+    document.addEventListener('gesturestart', preventGesture);
+    document.addEventListener('gesturechange', preventGesture);
+    document.addEventListener('gestureend', preventGesture);
     
     return () => {
-      document.removeEventListener('gesturestart', (e) => e.preventDefault());
-      document.removeEventListener('gesturechange', (e) => e.preventDefault());
-      document.removeEventListener('gestureend', (e) => e.preventDefault());
+      document.removeEventListener('gesturestart', preventGesture);
+      document.removeEventListener('gesturechange', preventGesture);
+      document.removeEventListener('gestureend', preventGesture);
     };
   }, [isNative]);
 
@@ -447,7 +367,6 @@ export function usePinchZoom({
     const container = containerRef.current;
     if (!container) return;
 
-    // Use non-passive listeners to allow preventDefault
     const options: AddEventListenerOptions = { passive: false, capture: true };
     
     container.addEventListener('touchstart', handleTouchStart, options);
@@ -472,65 +391,74 @@ export function usePinchZoom({
   const zoomIn = useCallback(() => {
     const container = containerRef.current;
     const content = contentRef.current;
+    if (!container || !content) return;
     
-    // Ensure initialization
-    if (!contentInitialized.current && content) {
-      const rect = content.getBoundingClientRect();
-      if (rect.width > 0 && rect.height > 0) {
-        initialContentSize.current = {
-          width: rect.width,
-          height: rect.height,
-        };
-        contentInitialized.current = true;
-      }
-    }
+    const oldScale = transform.scale;
+    const newScale = Math.min(maxScale, oldScale * 1.25);
     
-    setTransform(prev => {
-      const newScale = Math.min(maxScale, prev.scale * 1.25);
-      
-      if (container && content) {
-        const containerRect = container.getBoundingClientRect();
-        const contentRect = content.getBoundingClientRect();
-        return clampTransform({ ...prev, scale: newScale }, containerRect, contentRect, prev.scale);
-      }
-      
-      return { ...prev, scale: newScale };
+    const containerRect = container.getBoundingClientRect();
+    
+    // Zoom centered on viewport center
+    const viewportCenterY = containerRect.height / 2;
+    
+    // Document position of viewport center
+    const docY = (container.scrollTop + viewportCenterY) / oldScale;
+    
+    // New scroll to keep center in place
+    const newScrollTop = docY * newScale - viewportCenterY;
+    
+    const contentWidth = content.scrollWidth / oldScale;
+    const newTranslateX = clampTranslateX(0, newScale, containerRect.width, contentWidth);
+    
+    setTransform({
+      scale: newScale,
+      translateX: newTranslateX,
+      translateY: 0,
     });
-  }, [maxScale, containerRef, contentRef, clampTransform]);
+    
+    requestAnimationFrame(() => {
+      container.scrollTop = Math.max(0, newScrollTop);
+    });
+  }, [maxScale, containerRef, contentRef, transform.scale, clampTranslateX]);
 
   const zoomOut = useCallback(() => {
     const container = containerRef.current;
     const content = contentRef.current;
+    if (!container || !content) return;
     
-    // Ensure initialization
-    if (!contentInitialized.current && content) {
-      const rect = content.getBoundingClientRect();
-      if (rect.width > 0 && rect.height > 0) {
-        initialContentSize.current = {
-          width: rect.width,
-          height: rect.height,
-        };
-        contentInitialized.current = true;
-      }
+    const oldScale = transform.scale;
+    const newScale = Math.max(minScale, oldScale / 1.25);
+    
+    // Reset translate when zooming back to 1 or below
+    if (newScale <= 1) {
+      setTransform({ scale: newScale, translateX: 0, translateY: 0 });
+      return;
     }
     
-    setTransform(prev => {
-      const newScale = Math.max(minScale, prev.scale / 1.25);
-      
-      // Reset translate when zooming back to 1 or below
-      if (newScale <= 1) {
-        return { scale: newScale, translateX: 0, translateY: 0 };
-      }
-      
-      if (container && content) {
-        const containerRect = container.getBoundingClientRect();
-        const contentRect = content.getBoundingClientRect();
-        return clampTransform({ ...prev, scale: newScale }, containerRect, contentRect, prev.scale);
-      }
-      
-      return { ...prev, scale: newScale };
+    const containerRect = container.getBoundingClientRect();
+    
+    // Zoom centered on viewport center
+    const viewportCenterY = containerRect.height / 2;
+    
+    // Document position of viewport center
+    const docY = (container.scrollTop + viewportCenterY) / oldScale;
+    
+    // New scroll to keep center in place
+    const newScrollTop = docY * newScale - viewportCenterY;
+    
+    const contentWidth = content.scrollWidth / oldScale;
+    const newTranslateX = clampTranslateX(0, newScale, containerRect.width, contentWidth);
+    
+    setTransform({
+      scale: newScale,
+      translateX: newTranslateX,
+      translateY: 0,
     });
-  }, [minScale, containerRef, contentRef, clampTransform]);
+    
+    requestAnimationFrame(() => {
+      container.scrollTop = Math.max(0, newScrollTop);
+    });
+  }, [minScale, containerRef, contentRef, transform.scale, clampTranslateX]);
 
   return {
     transform,

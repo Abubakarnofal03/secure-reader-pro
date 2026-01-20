@@ -541,9 +541,10 @@ export default function SecureReaderScreen() {
             ref={pdfWrapperRef}
             className="flex flex-col items-center"
             style={{
-              transform: `translate(${transform.translateX}px, ${transform.translateY}px) scale(${transform.scale})`,
+              transform: `translateX(${transform.translateX}px) scale(${transform.scale})`,
               transformOrigin: 'top center',
               transition: 'none',
+              willChange: 'transform',
             }}
           >
             {pdfSource && (
