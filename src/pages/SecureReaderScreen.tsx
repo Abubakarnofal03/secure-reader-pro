@@ -85,10 +85,11 @@ export default function SecureReaderScreen() {
     totalPages: numPages,
   });
 
+  // Use the scrollable container for touch events, not the outer wrapper
   const { transform, zoomIn, zoomOut, resetZoom, scale } = usePinchZoom({
     minScale: 0.5,
     maxScale: 4,
-    containerRef: contentRef as React.RefObject<HTMLElement>,
+    containerRef: scrollContainerRef as React.RefObject<HTMLElement>,
     contentRef: pdfWrapperRef as React.RefObject<HTMLElement>,
   });
 

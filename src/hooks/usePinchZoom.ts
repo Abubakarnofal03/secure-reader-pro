@@ -78,9 +78,9 @@ export function usePinchZoom({
     };
   }, []);
 
-  // Store initial content dimensions once set
+  // Store initial content dimensions once set - initialize immediately as ready
   const initialContentSize = useRef<{ width: number; height: number } | null>(null);
-  const contentInitialized = useRef(false);
+  const contentInitialized = useRef(true); // Start as true to allow immediate gestures
   const listenersAttached = useRef(false);
 
   // Force re-initialization when scale changes from button interaction
@@ -187,19 +187,21 @@ export function usePinchZoom({
     const content = contentRef.current;
     if (!container || !content) return;
 
-    // Ensure content is initialized on first touch
-    if (!contentInitialized.current) {
-      const rect = content.getBoundingClientRect();
-      if (rect.width > 0 && rect.height > 0) {
+    // Always initialize/update content dimensions on touch for accurate zoom
+    const rect = content.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+      // If already scaled, calculate original size
+      const currentScale = transform.scale || 1;
+      if (!initialContentSize.current) {
         initialContentSize.current = {
-          width: rect.width,
-          height: rect.height,
+          width: rect.width / currentScale,
+          height: rect.height / currentScale,
         };
-        contentInitialized.current = true;
       }
+      contentInitialized.current = true;
     }
 
-    // Pinch start (two fingers)
+    // Pinch start (two fingers) - handle immediately without waiting
     if (e.touches.length === 2) {
       e.preventDefault();
       e.stopPropagation();
