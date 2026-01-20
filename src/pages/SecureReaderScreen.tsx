@@ -88,12 +88,11 @@ export default function SecureReaderScreen() {
     totalPages: numPages,
   });
 
-  // Use the scrollable container for touch events, not the outer wrapper
-  const { transform, zoomIn, zoomOut, resetZoom, scale } = usePinchZoom({
-    minScale: 0.5,
-    maxScale: 4,
+  // Pinch zoom - re-render approach (no CSS transform)
+  const { zoomIn, zoomOut, resetZoom, scale } = usePinchZoom({
+    minScale: 1,
+    maxScale: 2,
     containerRef: scrollContainerRef as React.RefObject<HTMLElement>,
-    contentRef: pdfWrapperRef as React.RefObject<HTMLElement>,
   });
 
   const pageWidth = baseWidth;
@@ -491,7 +490,7 @@ export default function SecureReaderScreen() {
           <div className="flex items-center gap-1 bg-muted/50 rounded-xl p-1">
             <button
               onClick={zoomOut}
-              disabled={scale <= 0.5}
+              disabled={scale <= 1}
               className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-card disabled:opacity-30 transition-all"
               title="Zoom out"
             >
@@ -506,7 +505,7 @@ export default function SecureReaderScreen() {
             </button>
             <button
               onClick={zoomIn}
-              disabled={scale >= 4}
+              disabled={scale >= 2}
               className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-card disabled:opacity-30 transition-all"
               title="Zoom in"
             >
@@ -531,19 +530,14 @@ export default function SecureReaderScreen() {
         
         <div 
           ref={scrollContainerRef}
-          className="h-full overflow-y-auto overflow-x-hidden overscroll-contain"
+          className="h-full overflow-y-auto overflow-x-auto overscroll-contain"
           style={{
             WebkitOverflowScrolling: 'touch',
           }}
         >
           <div
             ref={pdfWrapperRef}
-            className="flex flex-col items-center"
-            style={{
-              transform: `scale(${transform.scale})`,
-              transformOrigin: 'top center',
-              willChange: 'transform',
-            }}
+            className="flex flex-col items-center min-w-max"
           >
             {pdfSource && (
               <Document
@@ -567,6 +561,7 @@ export default function SecureReaderScreen() {
                   <VirtualizedPdfViewer
                     numPages={numPages}
                     pageWidth={pageWidth}
+                    scale={scale}
                     registerPage={registerPage}
                     scrollContainerRef={scrollContainerRef}
                   />

@@ -6,22 +6,24 @@ import { Loader2 } from 'lucide-react';
 interface VirtualizedPdfViewerProps {
   numPages: number;
   pageWidth: number;
+  scale: number;
   registerPage: (pageNumber: number, element: HTMLDivElement | null) => void;
   scrollContainerRef: RefObject<HTMLDivElement>;
 }
 
-// Simple page component - no caching, just render reliably
+// Page component - renders at scaled size
 const PdfPage = memo(({ 
   pageNumber, 
-  pageWidth,
+  scaledWidth,
+  estimatedHeight,
   registerPage,
 }: { 
   pageNumber: number; 
-  pageWidth: number;
+  scaledWidth: number;
+  estimatedHeight: number;
   registerPage: (pageNumber: number, element: HTMLDivElement | null) => void;
 }) => {
   const pageRef = useRef<HTMLDivElement>(null);
-  const estimatedHeight = Math.round(pageWidth * 1.4);
 
   // Register page element for scroll detection
   useEffect(() => {
@@ -52,14 +54,14 @@ const PdfPage = memo(({
       >
         <Page
           pageNumber={pageNumber}
-          width={pageWidth}
+          width={scaledWidth}
           renderTextLayer={false}
           renderAnnotationLayer={false}
           className="shadow-[var(--shadow-lg)] rounded-sm"
           loading={
             <div 
               className="flex items-center justify-center bg-muted/30 rounded-sm"
-              style={{ width: pageWidth, height: estimatedHeight }}
+              style={{ width: scaledWidth, height: estimatedHeight }}
             >
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
@@ -67,7 +69,7 @@ const PdfPage = memo(({
           error={
             <div 
               className="flex items-center justify-center bg-destructive/10 rounded-sm"
-              style={{ width: pageWidth, height: estimatedHeight }}
+              style={{ width: scaledWidth, height: estimatedHeight }}
             >
               <span className="text-xs text-destructive">Failed to load page</span>
             </div>
@@ -79,7 +81,8 @@ const PdfPage = memo(({
 }, (prevProps, nextProps) => {
   // Only re-render if these specific props change
   return prevProps.pageNumber === nextProps.pageNumber && 
-         prevProps.pageWidth === nextProps.pageWidth;
+         prevProps.scaledWidth === nextProps.scaledWidth &&
+         prevProps.estimatedHeight === nextProps.estimatedHeight;
 });
 
 PdfPage.displayName = 'PdfPage';
@@ -87,13 +90,18 @@ PdfPage.displayName = 'PdfPage';
 export function VirtualizedPdfViewer({
   numPages,
   pageWidth,
+  scale,
   registerPage,
   scrollContainerRef,
 }: VirtualizedPdfViewerProps) {
   const [isReady, setIsReady] = useState(false);
 
-  // Estimated height per page (page + page break + gap)
-  const estimatedPageHeight = Math.round(pageWidth * 1.4) + 60;
+  // Calculate scaled dimensions - this is the key to re-render zoom
+  const scaledWidth = Math.round(pageWidth * scale);
+  const scaledHeight = Math.round(scaledWidth * 1.4); // Maintain aspect ratio
+  
+  // Total height per item including page break indicator (60px) 
+  const estimatedPageHeight = scaledHeight + 60;
 
   // Wait for scroll container to be available
   useEffect(() => {
@@ -139,7 +147,7 @@ export function VirtualizedPdfViewer({
         
         return (
           <div
-            key={`page-${pageNumber}`}
+            key={`page-${pageNumber}-${scale}`}
             data-index={virtualItem.index}
             className="absolute top-0 left-0 w-full flex justify-center"
             style={{
@@ -148,7 +156,8 @@ export function VirtualizedPdfViewer({
           >
             <PdfPage
               pageNumber={pageNumber}
-              pageWidth={pageWidth}
+              scaledWidth={scaledWidth}
+              estimatedHeight={scaledHeight}
               registerPage={stableRegisterPage}
             />
           </div>
