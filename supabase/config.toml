@@ -2,3 +2,9 @@ project_id = "ssgiyfgbzbivukxtcnjq"
 
 [functions.render-pdf-page]
 verify_jwt = false
+
+[functions.get-segment-url]
+verify_jwt = false
+
+[functions.send-push-notification]
+verify_jwt = false
