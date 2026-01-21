@@ -47,7 +47,8 @@ export default function SecureReaderScreen() {
   const pdfWrapperRef = useRef<HTMLDivElement>(null);
   
   const { isRecording, screenshotDetected, clearScreenshotAlert } = useSecurityMonitor();
-  usePrivacyScreen(true);
+  // TEMPORARILY DISABLED for client presentation - set back to true when done
+  usePrivacyScreen(false);
   
   const [content, setContent] = useState<ContentDetails | null>(null);
   const [numPages, setNumPages] = useState<number>(0);
