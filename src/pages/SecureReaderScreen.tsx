@@ -21,6 +21,7 @@ import { usePrivacyScreen } from '@/hooks/usePrivacyScreen';
 import { useScrollPageDetection } from '@/hooks/useScrollPageDetection';
 import { usePdfOutline } from '@/hooks/usePdfOutline';
 import { useSignedUrlRefresh } from '@/hooks/useSignedUrlRefresh';
+import { useSegmentManager } from '@/hooks/useSegmentManager';
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
@@ -66,6 +67,7 @@ export default function SecureReaderScreen() {
   const [pdfDocument, setPdfDocument] = useState<any>(null);
   const [showToc, setShowToc] = useState(false);
   const [contentCategory, setContentCategory] = useState<string | null>(null);
+  const [isLegacyContent, setIsLegacyContent] = useState(false);
   
   // Store the PDF URL in a ref so refreshes don't trigger re-renders
   const pdfUrlRef = useRef<string | null>(null);
@@ -79,6 +81,21 @@ export default function SecureReaderScreen() {
   } = useScrollPageDetection({
     totalPages: numPages,
     enabled: numPages > 0,
+  });
+
+  // Segment manager for segmented PDFs
+  const {
+    segments,
+    isLoadingSegments,
+    getSegmentForPage,
+    getSegmentUrl,
+    isLoadingSegment,
+    totalPages: segmentedTotalPages,
+    isSegmented,
+  } = useSegmentManager({
+    contentId: id,
+    currentPage,
+    enabled: hasAccess && !isLegacyContent,
   });
 
   const {
@@ -595,6 +612,11 @@ export default function SecureReaderScreen() {
                     registerPage={registerPage}
                     scrollContainerRef={scrollContainerRef}
                     gestureTransform={gestureTransform}
+                    segments={segments}
+                    getSegmentUrl={getSegmentUrl}
+                    getSegmentForPage={getSegmentForPage}
+                    isLoadingSegment={isLoadingSegment}
+                    legacyMode={isLegacyContent || !isSegmented}
                   />
                 )}
               </Document>

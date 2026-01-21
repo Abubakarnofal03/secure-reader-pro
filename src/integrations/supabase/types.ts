@@ -47,6 +47,7 @@ export type Database = {
           is_active: boolean
           price: number
           title: string
+          total_pages: number | null
           updated_at: string
         }
         Insert: {
@@ -60,6 +61,7 @@ export type Database = {
           is_active?: boolean
           price?: number
           title: string
+          total_pages?: number | null
           updated_at?: string
         }
         Update: {
@@ -73,9 +75,48 @@ export type Database = {
           is_active?: boolean
           price?: number
           title?: string
+          total_pages?: number | null
           updated_at?: string
         }
         Relationships: []
+      }
+      content_segments: {
+        Row: {
+          content_id: string
+          created_at: string
+          end_page: number
+          file_path: string
+          id: string
+          segment_index: number
+          start_page: number
+        }
+        Insert: {
+          content_id: string
+          created_at?: string
+          end_page: number
+          file_path: string
+          id?: string
+          segment_index: number
+          start_page: number
+        }
+        Update: {
+          content_id?: string
+          created_at?: string
+          end_page?: number
+          file_path?: string
+          id?: string
+          segment_index?: number
+          start_page?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "content_segments_content_id_fkey"
+            columns: ["content_id"]
+            isOneToOne: false
+            referencedRelation: "content"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       profiles: {
         Row: {
