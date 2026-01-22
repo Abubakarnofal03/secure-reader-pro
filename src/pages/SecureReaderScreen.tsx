@@ -666,6 +666,14 @@ export default function SecureReaderScreen() {
               />
             )}
             
+            {/* Loading segments state for segmented content */}
+            {!isLegacyContent && !isSegmented && content && isLoadingSegments && (
+              <div className="flex flex-col items-center justify-center py-20">
+                <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
+                <p className="text-sm text-muted-foreground">Loading segments...</p>
+              </div>
+            )}
+            
             {/* Legacy content: wrap in a single Document */}
             {isLegacyContent && pdfSource && (
               <Document
