@@ -649,7 +649,25 @@ export default function SecureReaderScreen() {
               minWidth: '100%',
             }}
           >
-            {pdfSource && (
+            {/* Segmented content: VirtualizedPdfViewer handles its own Documents */}
+            {!isLegacyContent && isSegmented && numPages > 0 && id && (
+              <VirtualizedPdfViewer
+                numPages={numPages}
+                pageWidth={pageWidth}
+                scale={scale}
+                registerPage={registerPage}
+                scrollContainerRef={scrollContainerRef}
+                gestureTransform={gestureTransform}
+                segments={segments}
+                getSegmentUrl={getSegmentUrl}
+                getSegmentForPage={getSegmentForPage}
+                isLoadingSegment={isLoadingSegment}
+                legacyMode={false}
+              />
+            )}
+            
+            {/* Legacy content: wrap in a single Document */}
+            {isLegacyContent && pdfSource && (
               <Document
                 file={pdfSource}
                 onLoadSuccess={(loadedDoc) => onDocumentLoadSuccess({ numPages: loadedDoc.numPages }, loadedDoc)}
@@ -675,14 +693,18 @@ export default function SecureReaderScreen() {
                     registerPage={registerPage}
                     scrollContainerRef={scrollContainerRef}
                     gestureTransform={gestureTransform}
-                    segments={segments}
-                    getSegmentUrl={getSegmentUrl}
-                    getSegmentForPage={getSegmentForPage}
-                    isLoadingSegment={isLoadingSegment}
-                    legacyMode={isLegacyContent || !isSegmented}
+                    legacyMode={true}
                   />
                 )}
               </Document>
+            )}
+            
+            {/* Loading state when content hasn't determined mode yet */}
+            {!content && (
+              <div className="flex flex-col items-center justify-center py-20">
+                <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
+                <p className="text-sm text-muted-foreground">Preparing content...</p>
+              </div>
             )}
           </div>
         </div>
