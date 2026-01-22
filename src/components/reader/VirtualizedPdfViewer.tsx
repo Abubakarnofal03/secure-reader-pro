@@ -210,10 +210,11 @@ export function VirtualizedPdfViewer({
 
   // Calculate scaled dimensions
   const scaledWidth = Math.round(pageWidth * scale);
-  const scaledHeight = Math.round(scaledWidth * 1.4); // Maintain aspect ratio
+  // Use Letter size aspect ratio (8.5x11 = 1.294) which is common for PDFs
+  const scaledHeight = Math.round(scaledWidth * 1.294);
   
-  // Gap between pages
-  const pageGap = 16;
+  // Gap between pages - keep it minimal for continuous reading feel
+  const pageGap = 8;
   const estimatedPageHeight = scaledHeight + pageGap;
 
   // Determine if we're in segmented mode
