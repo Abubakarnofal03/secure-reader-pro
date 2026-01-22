@@ -95,7 +95,7 @@ export default function SecureReaderScreen() {
   } = useSegmentManager({
     contentId: id,
     currentPage,
-    enabled: hasAccess && !isLegacyContent,
+    enabled: hasAccess && !isLegacyContent && !loading,
   });
 
   const {
@@ -255,6 +255,7 @@ export default function SecureReaderScreen() {
     checkContentAccess();
   }, [id, profile]);
 
+  // Check if content is segmented or legacy, then fetch appropriately
   useEffect(() => {
     if (checkingAccess || !hasAccess) return;
 
@@ -278,45 +279,107 @@ export default function SecureReaderScreen() {
 
         setLoadingProgress(30);
 
-        const response = await supabase.functions.invoke('render-pdf-page', {
-          body: {
-            content_id: id,
-            page_number: 1,
-            device_id: deviceId,
-          },
-        });
+        // First, check if this content has segments
+        const { data: segmentCheck, error: segmentError } = await supabase
+          .from('content_segments')
+          .select('id')
+          .eq('content_id', id)
+          .limit(1);
 
-        setLoadingProgress(70);
-
-        if (response.error) {
-          throw new Error(response.error.message);
+        if (segmentError) {
+          console.error('Error checking segments:', segmentError);
         }
 
-        const data = response.data;
+        const hasSegments = segmentCheck && segmentCheck.length > 0;
+        
+        if (hasSegments) {
+          // Segmented content - don't call render-pdf-page, use segment manager instead
+          setIsLegacyContent(false);
+          setLoadingProgress(50);
 
-        if (data.error) {
-          if (data.code === 'DEVICE_MISMATCH') {
-            await signOut();
-            navigate('/login', { replace: true });
-            return;
+          // Fetch content metadata (title, watermark info) directly
+          const { data: contentData, error: contentError } = await supabase
+            .from('content')
+            .select('title, total_pages')
+            .eq('id', id)
+            .single();
+
+          if (contentError) {
+            throw new Error('Failed to load content metadata');
           }
-          throw new Error(data.error);
+
+          // Fetch profile for watermark
+          const { data: profileData } = await supabase
+            .from('profiles')
+            .select('name, email')
+            .eq('id', session.user.id)
+            .single();
+
+          setLoadingProgress(90);
+
+          setContent({
+            title: contentData.title,
+            signedUrl: '', // Will be loaded per-segment
+            expiresAt: 0,
+            watermark: {
+              userName: profileData?.name || profileData?.email?.split('@')[0] || 'User',
+              userEmail: profileData?.email || '',
+              timestamp: new Date().toISOString(),
+              sessionId: crypto.randomUUID().substring(0, 8),
+            },
+          });
+
+          // Set numPages from content metadata for segmented content
+          if (contentData.total_pages) {
+            setNumPages(contentData.total_pages);
+          }
+
+          setLoadingProgress(100);
+        } else {
+          // Legacy content - use render-pdf-page for single file
+          setIsLegacyContent(true);
+          setLoadingProgress(50);
+
+          const response = await supabase.functions.invoke('render-pdf-page', {
+            body: {
+              content_id: id,
+              page_number: 1,
+              device_id: deviceId,
+            },
+          });
+
+          setLoadingProgress(70);
+
+          if (response.error) {
+            throw new Error(response.error.message);
+          }
+
+          const data = response.data;
+
+          if (data.error) {
+            if (data.code === 'DEVICE_MISMATCH') {
+              await signOut();
+              navigate('/login', { replace: true });
+              return;
+            }
+            throw new Error(data.error);
+          }
+
+          setLoadingProgress(90);
+
+          // Store URL in refs to avoid re-renders on refresh
+          pdfUrlRef.current = data.signedUrl;
+          expiresAtRef.current = data.expiresAt || Date.now() + (5 * 60 * 1000);
+
+          setContent({
+            title: data.title,
+            signedUrl: data.signedUrl,
+            expiresAt: data.expiresAt || Date.now() + (5 * 60 * 1000),
+            watermark: data.watermark,
+          });
+
+          setLoadingProgress(100);
         }
-
-        setLoadingProgress(90);
-
-        // Store URL in refs to avoid re-renders on refresh
-        pdfUrlRef.current = data.signedUrl;
-        expiresAtRef.current = data.expiresAt || Date.now() + (5 * 60 * 1000);
-
-        setContent({
-          title: data.title,
-          signedUrl: data.signedUrl,
-          expiresAt: data.expiresAt || Date.now() + (5 * 60 * 1000), // Fallback 5 min
-          watermark: data.watermark,
-        });
-
-        setLoadingProgress(100);
       } catch (err) {
         console.error('Error fetching content:', err);
         setError(err instanceof Error ? err.message : 'Failed to load content');
