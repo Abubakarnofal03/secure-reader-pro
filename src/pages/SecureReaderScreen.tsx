@@ -11,7 +11,7 @@ import { ResumeReadingToast } from '@/components/reader/ResumeReadingToast';
 import { ScrollProgressBar } from '@/components/reader/ScrollProgressBar';
 import { FloatingPageIndicator } from '@/components/reader/FloatingPageIndicator';
 import { TableOfContents } from '@/components/reader/TableOfContents';
-import { VirtualizedPdfViewer } from '@/components/reader/VirtualizedPdfViewer';
+import { VirtualizedPdfViewer, VirtualizedPdfViewerApi } from '@/components/reader/VirtualizedPdfViewer';
 import { Progress } from '@/components/ui/progress';
 import { getDeviceId } from '@/lib/device';
 import { useSecurityMonitor } from '@/hooks/useSecurityMonitor';
@@ -77,11 +77,13 @@ export default function SecureReaderScreen() {
     containerRef: scrollContainerRef, 
     registerPage, 
     currentPage, 
-    scrollToPage 
   } = useScrollPageDetection({
     totalPages: numPages,
     enabled: numPages > 0,
   });
+
+  // Ref to store the virtualizer's scroll API
+  const viewerApiRef = useRef<VirtualizedPdfViewerApi | null>(null);
 
   // Segment manager for segmented PDFs
   const {
@@ -92,6 +94,7 @@ export default function SecureReaderScreen() {
     isLoadingSegment,
     totalPages: segmentedTotalPages,
     isSegmented,
+    prefetchSegmentForPage,
   } = useSegmentManager({
     contentId: id,
     currentPage,
@@ -441,25 +444,42 @@ export default function SecureReaderScreen() {
     }
   }, []);
 
-  const goToPage = useCallback((page: number) => {
-    if (page >= 1 && page <= numPages) {
-      scrollToPage(page, 'smooth');
-    }
-  }, [numPages, scrollToPage]);
+  // Callback to receive the virtualizer's scroll API
+  const handleViewerReady = useCallback((api: VirtualizedPdfViewerApi) => {
+    viewerApiRef.current = api;
+  }, []);
 
-  const handleResume = useCallback(() => {
+  const goToPage = useCallback(async (page: number) => {
+    if (page < 1 || page > numPages) return;
+    
+    // For segmented content, prefetch the target segment first
+    if (isSegmented && prefetchSegmentForPage) {
+      await prefetchSegmentForPage(page);
+    }
+    
+    // Use virtualizer's scroll method
+    viewerApiRef.current?.scrollToPage(page, true);
+  }, [numPages, isSegmented, prefetchSegmentForPage]);
+
+  const handleResume = useCallback(async () => {
     if (savedProgress) {
+      // For segmented content, prefetch the target segment first
+      if (isSegmented && prefetchSegmentForPage) {
+        await prefetchSegmentForPage(savedProgress.currentPage);
+      }
+      
+      // Small delay to ensure viewer is ready
       setTimeout(() => {
-        scrollToPage(savedProgress.currentPage, 'smooth');
+        viewerApiRef.current?.scrollToPage(savedProgress.currentPage, true);
       }, 100);
     }
     dismissResumePrompt();
-  }, [savedProgress, dismissResumePrompt, scrollToPage]);
+  }, [savedProgress, dismissResumePrompt, isSegmented, prefetchSegmentForPage]);
 
   const handleStartOver = useCallback(() => {
-    scrollToPage(1, 'smooth');
+    viewerApiRef.current?.scrollToPage(1, true);
     dismissResumePrompt();
-  }, [dismissResumePrompt, scrollToPage]);
+  }, [dismissResumePrompt]);
 
   const handleClose = useCallback(() => {
     if (currentPage > 0 && numPages > 0) {
@@ -663,6 +683,7 @@ export default function SecureReaderScreen() {
                 getSegmentForPage={getSegmentForPage}
                 isLoadingSegment={isLoadingSegment}
                 legacyMode={false}
+                onReady={handleViewerReady}
               />
             )}
             
@@ -702,6 +723,7 @@ export default function SecureReaderScreen() {
                     scrollContainerRef={scrollContainerRef}
                     gestureTransform={gestureTransform}
                     legacyMode={true}
+                    onReady={handleViewerReady}
                   />
                 )}
               </Document>

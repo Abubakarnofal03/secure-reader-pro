@@ -11,6 +11,11 @@ interface Segment {
   file_path: string;
 }
 
+// API exposed via onReady callback for external scroll control
+export interface VirtualizedPdfViewerApi {
+  scrollToPage: (page: number, smooth?: boolean) => void;
+}
+
 interface VirtualizedPdfViewerProps {
   numPages: number;
   pageWidth: number;
@@ -25,6 +30,8 @@ interface VirtualizedPdfViewerProps {
   isLoadingSegment?: boolean;
   // Legacy mode: single document URL (for backwards compatibility)
   legacyMode?: boolean;
+  // Callback to expose scroll API for external navigation control
+  onReady?: (api: VirtualizedPdfViewerApi) => void;
 }
 
 // Segmented page component - renders a page from a specific segment
@@ -205,6 +212,7 @@ export function VirtualizedPdfViewer({
   getSegmentForPage,
   isLoadingSegment = false,
   legacyMode = false,
+  onReady,
 }: VirtualizedPdfViewerProps) {
   const [isReady, setIsReady] = useState(false);
 
@@ -240,6 +248,24 @@ export function VirtualizedPdfViewer({
     paddingStart: 16,
     paddingEnd: 16,
   });
+
+  // Expose scroll API for external navigation (jump to page, resume reading)
+  const scrollToPage = useCallback((page: number, smooth: boolean = true) => {
+    const pageIndex = page - 1; // Convert 1-based page to 0-based index
+    if (pageIndex >= 0 && pageIndex < numPages) {
+      virtualizer.scrollToIndex(pageIndex, { 
+        align: 'start',
+        behavior: smooth ? 'smooth' : 'auto',
+      });
+    }
+  }, [virtualizer, numPages]);
+
+  // Call onReady when component is ready with the scroll API
+  useEffect(() => {
+    if (isReady && onReady) {
+      onReady({ scrollToPage });
+    }
+  }, [isReady, onReady, scrollToPage]);
 
   const virtualItems = virtualizer.getVirtualItems();
 
