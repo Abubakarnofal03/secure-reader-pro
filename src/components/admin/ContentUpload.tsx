@@ -158,11 +158,13 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
       const arrayBuffer = await selectedFile.arrayBuffer();
       
       // Extract Table of Contents from full PDF before splitting
+      // Create a copy because pdfjs detaches the ArrayBuffer during TOC extraction
       setUploadStatus('Extracting table of contents...');
       setUploadProgress(8);
       let tocData = null;
       try {
-        tocData = await extractTableOfContents(arrayBuffer);
+        const tocArrayBuffer = arrayBuffer.slice(0);
+        tocData = await extractTableOfContents(tocArrayBuffer);
         if (tocData) {
           console.log(`[ContentUpload] Extracted TOC with ${tocData.items.length} items (${tocData.extractedFrom})`);
         } else {

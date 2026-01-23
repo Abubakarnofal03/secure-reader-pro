@@ -1,6 +1,6 @@
 import { useRef, useCallback, useEffect, useState, memo, RefObject } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Document, Page } from 'react-pdf';
+import { Document, Page, pdfjs } from 'react-pdf';
 import { Loader2, AlertTriangle } from 'lucide-react';
 import { useSegmentDocumentCache } from '@/hooks/useSegmentDocumentCache';
 import { PageSeparator } from './PageSeparator';
@@ -8,6 +8,13 @@ import { PageSeparator } from './PageSeparator';
 // Import react-pdf layer styles for proper text/annotation rendering
 import 'react-pdf/dist/Page/TextLayer.css';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
+
+// PDF.js options for proper rendering of fonts, characters, and embedded content
+const pdfOptions = {
+  cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfjs.version}/cmaps/`,
+  cMapPacked: true,
+  standardFontDataUrl: `https://unpkg.com/pdfjs-dist@${pdfjs.version}/standard_fonts/`,
+};
 
 interface Segment {
   id: string;
@@ -148,6 +155,7 @@ const SegmentedPdfPage = memo(({
         loading={null}
         error={null}
         onLoadError={handleLoadError}
+        options={pdfOptions}
       >
         <Page
           pageNumber={localPageNumber}
