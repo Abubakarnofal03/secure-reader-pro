@@ -11,7 +11,7 @@ import { ResumeReadingToast } from '@/components/reader/ResumeReadingToast';
 import { ScrollProgressBar } from '@/components/reader/ScrollProgressBar';
 import { FloatingPageIndicator } from '@/components/reader/FloatingPageIndicator';
 import { TableOfContents } from '@/components/reader/TableOfContents';
-import { VirtualizedPdfViewer } from '@/components/reader/VirtualizedPdfViewer';
+import { VirtualizedPdfViewer, VirtualizedPdfViewerApi } from '@/components/reader/VirtualizedPdfViewer';
 import { Progress } from '@/components/ui/progress';
 import { getDeviceId } from '@/lib/device';
 import { useSecurityMonitor } from '@/hooks/useSecurityMonitor';
@@ -21,8 +21,14 @@ import { usePrivacyScreen } from '@/hooks/usePrivacyScreen';
 import { useScrollPageDetection } from '@/hooks/useScrollPageDetection';
 import { usePdfOutline } from '@/hooks/usePdfOutline';
 import { useSignedUrlRefresh } from '@/hooks/useSignedUrlRefresh';
+import { useSegmentManager } from '@/hooks/useSegmentManager';
 
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+// IMPORTANT (Capacitor): avoid CDN worker (can be blocked by ATS/CSP/offline).
+// Bundle the worker with the app so PDF rendering never depends on external network.
+pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+  'pdfjs-dist/build/pdf.worker.min.mjs',
+  import.meta.url
+).toString();
 
 interface ContentDetails {
   title: string;
@@ -66,6 +72,9 @@ export default function SecureReaderScreen() {
   const [pdfDocument, setPdfDocument] = useState<any>(null);
   const [showToc, setShowToc] = useState(false);
   const [contentCategory, setContentCategory] = useState<string | null>(null);
+  const [isLegacyContent, setIsLegacyContent] = useState(false);
+  const [isJumpingToPage, setIsJumpingToPage] = useState(false);
+  const [jumpTargetPage, setJumpTargetPage] = useState<number | null>(null);
   
   // Store the PDF URL in a ref so refreshes don't trigger re-renders
   const pdfUrlRef = useRef<string | null>(null);
@@ -75,10 +84,28 @@ export default function SecureReaderScreen() {
     containerRef: scrollContainerRef, 
     registerPage, 
     currentPage, 
-    scrollToPage 
   } = useScrollPageDetection({
     totalPages: numPages,
     enabled: numPages > 0,
+  });
+
+  // Ref to store the virtualizer's scroll API
+  const viewerApiRef = useRef<VirtualizedPdfViewerApi | null>(null);
+
+  // Segment manager for segmented PDFs
+  const {
+    segments,
+    isLoadingSegments,
+    getSegmentForPage,
+    getSegmentUrl,
+    isLoadingSegment,
+    totalPages: segmentedTotalPages,
+    isSegmented,
+    prefetchSegmentForPage,
+  } = useSegmentManager({
+    contentId: id,
+    currentPage,
+    enabled: hasAccess && !isLegacyContent && !loading,
   });
 
   const {
@@ -238,6 +265,7 @@ export default function SecureReaderScreen() {
     checkContentAccess();
   }, [id, profile]);
 
+  // Check if content is segmented or legacy, then fetch appropriately
   useEffect(() => {
     if (checkingAccess || !hasAccess) return;
 
@@ -261,45 +289,107 @@ export default function SecureReaderScreen() {
 
         setLoadingProgress(30);
 
-        const response = await supabase.functions.invoke('render-pdf-page', {
-          body: {
-            content_id: id,
-            page_number: 1,
-            device_id: deviceId,
-          },
-        });
+        // First, check if this content has segments
+        const { data: segmentCheck, error: segmentError } = await supabase
+          .from('content_segments')
+          .select('id')
+          .eq('content_id', id)
+          .limit(1);
 
-        setLoadingProgress(70);
-
-        if (response.error) {
-          throw new Error(response.error.message);
+        if (segmentError) {
+          console.error('Error checking segments:', segmentError);
         }
 
-        const data = response.data;
+        const hasSegments = segmentCheck && segmentCheck.length > 0;
+        
+        if (hasSegments) {
+          // Segmented content - don't call render-pdf-page, use segment manager instead
+          setIsLegacyContent(false);
+          setLoadingProgress(50);
 
-        if (data.error) {
-          if (data.code === 'DEVICE_MISMATCH') {
-            await signOut();
-            navigate('/login', { replace: true });
-            return;
+          // Fetch content metadata (title, watermark info) directly
+          const { data: contentData, error: contentError } = await supabase
+            .from('content')
+            .select('title, total_pages')
+            .eq('id', id)
+            .single();
+
+          if (contentError) {
+            throw new Error('Failed to load content metadata');
           }
-          throw new Error(data.error);
+
+          // Fetch profile for watermark
+          const { data: profileData } = await supabase
+            .from('profiles')
+            .select('name, email')
+            .eq('id', session.user.id)
+            .single();
+
+          setLoadingProgress(90);
+
+          setContent({
+            title: contentData.title,
+            signedUrl: '', // Will be loaded per-segment
+            expiresAt: 0,
+            watermark: {
+              userName: profileData?.name || profileData?.email?.split('@')[0] || 'User',
+              userEmail: profileData?.email || '',
+              timestamp: new Date().toISOString(),
+              sessionId: crypto.randomUUID().substring(0, 8),
+            },
+          });
+
+          // Set numPages from content metadata for segmented content
+          if (contentData.total_pages) {
+            setNumPages(contentData.total_pages);
+          }
+
+          setLoadingProgress(100);
+        } else {
+          // Legacy content - use render-pdf-page for single file
+          setIsLegacyContent(true);
+          setLoadingProgress(50);
+
+          const response = await supabase.functions.invoke('render-pdf-page', {
+            body: {
+              content_id: id,
+              page_number: 1,
+              device_id: deviceId,
+            },
+          });
+
+          setLoadingProgress(70);
+
+          if (response.error) {
+            throw new Error(response.error.message);
+          }
+
+          const data = response.data;
+
+          if (data.error) {
+            if (data.code === 'DEVICE_MISMATCH') {
+              await signOut();
+              navigate('/login', { replace: true });
+              return;
+            }
+            throw new Error(data.error);
+          }
+
+          setLoadingProgress(90);
+
+          // Store URL in refs to avoid re-renders on refresh
+          pdfUrlRef.current = data.signedUrl;
+          expiresAtRef.current = data.expiresAt || Date.now() + (5 * 60 * 1000);
+
+          setContent({
+            title: data.title,
+            signedUrl: data.signedUrl,
+            expiresAt: data.expiresAt || Date.now() + (5 * 60 * 1000),
+            watermark: data.watermark,
+          });
+
+          setLoadingProgress(100);
         }
-
-        setLoadingProgress(90);
-
-        // Store URL in refs to avoid re-renders on refresh
-        pdfUrlRef.current = data.signedUrl;
-        expiresAtRef.current = data.expiresAt || Date.now() + (5 * 60 * 1000);
-
-        setContent({
-          title: data.title,
-          signedUrl: data.signedUrl,
-          expiresAt: data.expiresAt || Date.now() + (5 * 60 * 1000), // Fallback 5 min
-          watermark: data.watermark,
-        });
-
-        setLoadingProgress(100);
       } catch (err) {
         console.error('Error fetching content:', err);
         setError(err instanceof Error ? err.message : 'Failed to load content');
@@ -361,25 +451,71 @@ export default function SecureReaderScreen() {
     }
   }, []);
 
-  const goToPage = useCallback((page: number) => {
-    if (page >= 1 && page <= numPages) {
-      scrollToPage(page, 'smooth');
-    }
-  }, [numPages, scrollToPage]);
+  // Callback to receive the virtualizer's scroll API
+  const handleViewerReady = useCallback((api: VirtualizedPdfViewerApi) => {
+    viewerApiRef.current = api;
+  }, []);
 
-  const handleResume = useCallback(() => {
-    if (savedProgress) {
+  const goToPage = useCallback(async (page: number) => {
+    if (page < 1 || page > numPages) return;
+    
+    setIsJumpingToPage(true);
+    setJumpTargetPage(page);
+    
+    try {
+      // For segmented content, prefetch the target segment first
+      if (isSegmented && prefetchSegmentForPage) {
+        await prefetchSegmentForPage(page);
+      }
+      
+      // Use virtualizer's scroll method
+      viewerApiRef.current?.scrollToPage(page, true);
+      
+      // Small delay to let the scroll complete
       setTimeout(() => {
-        scrollToPage(savedProgress.currentPage, 'smooth');
-      }, 100);
+        setIsJumpingToPage(false);
+        setJumpTargetPage(null);
+      }, 500);
+    } catch (err) {
+      console.error('Error jumping to page:', err);
+      setIsJumpingToPage(false);
+      setJumpTargetPage(null);
+    }
+  }, [numPages, isSegmented, prefetchSegmentForPage]);
+
+  const handleResume = useCallback(async () => {
+    if (savedProgress) {
+      setIsJumpingToPage(true);
+      setJumpTargetPage(savedProgress.currentPage);
+      
+      try {
+        // For segmented content, prefetch the target segment first
+        if (isSegmented && prefetchSegmentForPage) {
+          await prefetchSegmentForPage(savedProgress.currentPage);
+        }
+        
+        // Small delay to ensure viewer is ready
+        setTimeout(() => {
+          viewerApiRef.current?.scrollToPage(savedProgress.currentPage, true);
+          
+          setTimeout(() => {
+            setIsJumpingToPage(false);
+            setJumpTargetPage(null);
+          }, 500);
+        }, 100);
+      } catch (err) {
+        console.error('Error resuming:', err);
+        setIsJumpingToPage(false);
+        setJumpTargetPage(null);
+      }
     }
     dismissResumePrompt();
-  }, [savedProgress, dismissResumePrompt, scrollToPage]);
+  }, [savedProgress, dismissResumePrompt, isSegmented, prefetchSegmentForPage]);
 
   const handleStartOver = useCallback(() => {
-    scrollToPage(1, 'smooth');
+    viewerApiRef.current?.scrollToPage(1, true);
     dismissResumePrompt();
-  }, [dismissResumePrompt, scrollToPage]);
+  }, [dismissResumePrompt]);
 
   const handleClose = useCallback(() => {
     if (currentPage > 0 && numPages > 0) {
@@ -444,6 +580,18 @@ export default function SecureReaderScreen() {
         screenshotDetected={screenshotDetected}
         onDismiss={clearScreenshotAlert}
       />
+
+      {/* Page Jump Loading Overlay */}
+      {isJumpingToPage && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-3 rounded-2xl bg-card p-6 shadow-lg border border-border">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <p className="text-sm font-medium text-foreground">
+              Jumping to page {jumpTargetPage}...
+            </p>
+          </div>
+        </div>
+      )}
 
       <ResumeReadingToast
         show={showResumePrompt && numPages > 0}
@@ -569,7 +717,34 @@ export default function SecureReaderScreen() {
               minWidth: '100%',
             }}
           >
-            {pdfSource && (
+            {/* Segmented content: VirtualizedPdfViewer handles its own Documents */}
+            {!isLegacyContent && isSegmented && numPages > 0 && id && (
+              <VirtualizedPdfViewer
+                numPages={numPages}
+                pageWidth={pageWidth}
+                scale={scale}
+                registerPage={registerPage}
+                scrollContainerRef={scrollContainerRef}
+                gestureTransform={gestureTransform}
+                segments={segments}
+                getSegmentUrl={getSegmentUrl}
+                getSegmentForPage={getSegmentForPage}
+                isLoadingSegment={isLoadingSegment}
+                legacyMode={false}
+                onReady={handleViewerReady}
+              />
+            )}
+            
+            {/* Loading segments state for segmented content */}
+            {!isLegacyContent && !isSegmented && content && isLoadingSegments && (
+              <div className="flex flex-col items-center justify-center py-20">
+                <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
+                <p className="text-sm text-muted-foreground">Loading segments...</p>
+              </div>
+            )}
+            
+            {/* Legacy content: wrap in a single Document */}
+            {isLegacyContent && pdfSource && (
               <Document
                 file={pdfSource}
                 onLoadSuccess={(loadedDoc) => onDocumentLoadSuccess({ numPages: loadedDoc.numPages }, loadedDoc)}
@@ -595,9 +770,19 @@ export default function SecureReaderScreen() {
                     registerPage={registerPage}
                     scrollContainerRef={scrollContainerRef}
                     gestureTransform={gestureTransform}
+                    legacyMode={true}
+                    onReady={handleViewerReady}
                   />
                 )}
               </Document>
+            )}
+            
+            {/* Loading state when content hasn't determined mode yet */}
+            {!content && (
+              <div className="flex flex-col items-center justify-center py-20">
+                <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
+                <p className="text-sm text-muted-foreground">Preparing content...</p>
+              </div>
             )}
           </div>
         </div>

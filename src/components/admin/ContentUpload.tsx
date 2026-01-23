@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
 import { Upload, FileUp, X, Loader2 } from 'lucide-react';
+import { PDFDocument } from 'pdf-lib';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -15,11 +16,15 @@ interface ContentUploadProps {
   onSuccess: () => void;
 }
 
+// Number of pages per segment
+const PAGES_PER_SEGMENT = 50;
+
 export function ContentUpload({ onSuccess }: ContentUploadProps) {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadStatus, setUploadStatus] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -37,8 +42,8 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
       // Warn for very large files but don't prevent
       if (file.size > 100 * 1024 * 1024) { // 100MB
         toast({ 
-          title: 'Large File', 
-          description: 'This is a large file. Upload may take a while.', 
+          title: 'Large File Detected', 
+          description: 'This file will be split into segments for optimal performance.', 
         });
       }
       setSelectedFile(file);
@@ -46,6 +51,81 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
         setTitle(file.name.replace('.pdf', ''));
       }
     }
+  };
+
+  const splitPdfIntoSegments = async (pdfBytes: ArrayBuffer): Promise<{ segment: Uint8Array; startPage: number; endPage: number }[]> => {
+    const pdfDoc = await PDFDocument.load(pdfBytes);
+    const totalPages = pdfDoc.getPageCount();
+    const segments: { segment: Uint8Array; startPage: number; endPage: number }[] = [];
+
+    for (let startIdx = 0; startIdx < totalPages; startIdx += PAGES_PER_SEGMENT) {
+      const endIdx = Math.min(startIdx + PAGES_PER_SEGMENT - 1, totalPages - 1);
+      
+      // Create a new document for this segment
+      const segmentDoc = await PDFDocument.create();
+      
+      // Copy pages from original document
+      const pageIndices = [];
+      for (let i = startIdx; i <= endIdx; i++) {
+        pageIndices.push(i);
+      }
+      
+      const copiedPages = await segmentDoc.copyPages(pdfDoc, pageIndices);
+      copiedPages.forEach((page) => {
+        segmentDoc.addPage(page);
+      });
+
+      // Save segment as bytes
+      const segmentBytes = await segmentDoc.save();
+      
+      segments.push({
+        segment: segmentBytes,
+        startPage: startIdx + 1, // 1-indexed for user-facing page numbers
+        endPage: endIdx + 1,
+      });
+    }
+
+    return segments;
+  };
+
+  const uploadSegment = async (
+    segmentBytes: Uint8Array,
+    contentId: string,
+    segmentIndex: number,
+    accessToken: string
+  ): Promise<string> => {
+    const fileName = `segment_${segmentIndex}.pdf`;
+    const filePath = `${contentId}/${fileName}`;
+    
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      
+      xhr.addEventListener('load', () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(filePath);
+        } else {
+          try {
+            const response = JSON.parse(xhr.responseText);
+            reject(new Error(response.message || response.error || 'Upload failed'));
+          } catch {
+            reject(new Error(`Upload failed with status ${xhr.status}`));
+          }
+        }
+      });
+
+      xhr.addEventListener('error', () => reject(new Error('Network error during upload')));
+      xhr.addEventListener('abort', () => reject(new Error('Upload cancelled')));
+
+      xhr.open('POST', `${supabaseUrl}/storage/v1/object/content-files/${filePath}`);
+      xhr.setRequestHeader('Authorization', `Bearer ${accessToken}`);
+      xhr.setRequestHeader('Content-Type', 'application/pdf');
+      xhr.setRequestHeader('x-upsert', 'false');
+      // Create a new Uint8Array copy to ensure we have a proper ArrayBuffer
+      const copy = new Uint8Array(segmentBytes);
+      xhr.send(new Blob([copy], { type: 'application/pdf' }));
+    });
   };
 
   const handleUpload = async () => {
@@ -62,89 +142,95 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
 
     setUploading(true);
     setUploadProgress(0);
+    setUploadStatus('Reading PDF...');
+    
+    let contentId: string | null = null;
     
     try {
-      // Generate unique file path
-      const timestamp = Date.now();
-      const fileName = `${timestamp}-${selectedFile.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-      const filePath = `content/${fileName}`;
-
-      // For large files, we'll use chunked upload simulation with progress
-      const totalSize = selectedFile.size;
-      const chunkSize = 1024 * 1024; // 1MB chunks for progress tracking
-      let uploadedBytes = 0;
-
-      // Create a custom upload with progress tracking using XMLHttpRequest
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
         throw new Error('Not authenticated');
       }
 
-      const formData = new FormData();
-      formData.append('', selectedFile);
-
-      const xhr = new XMLHttpRequest();
+      // Read the PDF file
+      setUploadProgress(5);
+      const arrayBuffer = await selectedFile.arrayBuffer();
       
-      const uploadPromise = new Promise<void>((resolve, reject) => {
-        xhr.upload.addEventListener('progress', (event) => {
-          if (event.lengthComputable) {
-            const progress = Math.round((event.loaded / event.total) * 100);
-            setUploadProgress(progress);
-          }
-        });
-
-        xhr.addEventListener('load', () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            resolve();
-          } else {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              reject(new Error(response.message || response.error || 'Upload failed'));
-            } catch {
-              reject(new Error(`Upload failed with status ${xhr.status}`));
-            }
-          }
-        });
-
-        xhr.addEventListener('error', () => {
-          reject(new Error('Network error during upload'));
-        });
-
-        xhr.addEventListener('abort', () => {
-          reject(new Error('Upload cancelled'));
-        });
-      });
-
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      xhr.open('POST', `${supabaseUrl}/storage/v1/object/content-files/${filePath}`);
-      xhr.setRequestHeader('Authorization', `Bearer ${session.access_token}`);
-      xhr.setRequestHeader('x-upsert', 'false');
-      xhr.send(selectedFile);
-
-      await uploadPromise;
-      // Create content record
-      setUploadProgress(100);
+      // Split into segments
+      setUploadStatus('Splitting PDF into segments...');
+      setUploadProgress(10);
+      const segments = await splitPdfIntoSegments(arrayBuffer);
+      const totalPages = segments.reduce((max, seg) => Math.max(max, seg.endPage), 0);
       
-      const { error: insertError } = await supabase
+      console.log(`[ContentUpload] Split PDF into ${segments.length} segments, ${totalPages} total pages`);
+
+      // Create content record first to get the ID
+      setUploadStatus('Creating content record...');
+      setUploadProgress(15);
+      
+      const { data: contentData, error: insertError } = await supabase
         .from('content')
         .insert({
           title: title.trim(),
           description: description.trim() || null,
-          file_path: filePath,
+          file_path: 'segmented', // Placeholder - actual files are in segments
           is_active: true,
           price: priceValue,
           currency: 'PKR',
           cover_url: coverUrl,
           category: category,
-        });
+          total_pages: totalPages,
+        })
+        .select('id')
+        .single();
 
-      if (insertError) {
-        // If insert fails, try to delete the uploaded file
-        await supabase.storage.from('content-files').remove([filePath]);
-        throw new Error(`Failed to create content record: ${insertError.message}`);
+      if (insertError || !contentData) {
+        throw new Error(`Failed to create content record: ${insertError?.message || 'Unknown error'}`);
       }
 
-      toast({ title: 'Success', description: 'Content uploaded successfully' });
+      contentId = contentData.id;
+      console.log(`[ContentUpload] Created content record: ${contentId}`);
+
+      // Upload each segment
+      const segmentUploadProgress = 80 / segments.length; // 80% for uploads (15-95%)
+      
+      for (let i = 0; i < segments.length; i++) {
+        const seg = segments[i];
+        setUploadStatus(`Uploading segment ${i + 1} of ${segments.length}...`);
+        
+        // Upload segment file
+        const filePath = await uploadSegment(
+          seg.segment,
+          contentId,
+          i,
+          session.access_token
+        );
+
+        // Insert segment record
+        const { error: segmentInsertError } = await supabase
+          .from('content_segments')
+          .insert({
+            content_id: contentId,
+            segment_index: i,
+            start_page: seg.startPage,
+            end_page: seg.endPage,
+            file_path: filePath,
+          });
+
+        if (segmentInsertError) {
+          throw new Error(`Failed to create segment record: ${segmentInsertError.message}`);
+        }
+
+        setUploadProgress(15 + Math.round((i + 1) * segmentUploadProgress));
+      }
+
+      setUploadStatus('Finalizing...');
+      setUploadProgress(100);
+
+      toast({ 
+        title: 'Success', 
+        description: `Content uploaded successfully (${segments.length} segments, ${totalPages} pages)` 
+      });
       
       // Reset form
       setSelectedFile(null);
@@ -154,6 +240,7 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
       setCategory('general');
       setCoverUrl(null);
       setUploadProgress(0);
+      setUploadStatus('');
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
@@ -161,6 +248,16 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
       onSuccess();
     } catch (error) {
       console.error('Upload error:', error);
+      
+      // Cleanup: Delete content record if created (segments will cascade delete)
+      if (contentId) {
+        try {
+          await supabase.from('content').delete().eq('id', contentId);
+        } catch (cleanupError) {
+          console.error('Cleanup error:', cleanupError);
+        }
+      }
+      
       toast({
         title: 'Upload Failed',
         description: error instanceof Error ? error.message : 'An error occurred',
@@ -169,6 +266,7 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
     } finally {
       setUploading(false);
       setUploadProgress(0);
+      setUploadStatus('');
     }
   };
 
@@ -219,6 +317,7 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
               >
                 <FileUp className="h-8 w-8 text-muted-foreground mb-2" />
                 <span className="text-sm text-muted-foreground">Click to select PDF file</span>
+                <span className="text-xs text-muted-foreground mt-1">Large files will be automatically split</span>
               </div>
             )}
             <input
@@ -317,7 +416,7 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
         {uploading && (
           <div className="space-y-2">
             <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Uploading...</span>
+              <span className="text-muted-foreground">{uploadStatus || 'Uploading...'}</span>
               <span className="font-medium">{uploadProgress}%</span>
             </div>
             <Progress value={uploadProgress} className="h-2" />
@@ -333,7 +432,7 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
           {uploading ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Uploading... {uploadProgress}%
+              {uploadStatus || `Uploading... ${uploadProgress}%`}
             </>
           ) : (
             <>
