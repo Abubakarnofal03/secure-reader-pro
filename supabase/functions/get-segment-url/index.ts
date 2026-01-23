@@ -113,8 +113,9 @@ serve(async (req) => {
       );
     }
 
-    // Generate short-lived signed URL (60 seconds for security)
-    const urlExpirySeconds = 60;
+    // Generate signed URL with 5 minute expiry
+    // The client caches these to prevent constant re-downloads
+    const urlExpirySeconds = 5 * 60; // 5 minutes
     const { data: signedUrlData, error: signedUrlError } = await adminClient.storage
       .from("content-files")
       .createSignedUrl(segment.file_path, urlExpirySeconds);

@@ -35,10 +35,10 @@ interface UseSegmentManagerResult {
   isSegmented: boolean;
 }
 
-// Short-lived signed URLs for security (60 seconds)
-const SIGNED_URL_EXPIRY_SECONDS = 60;
-// Refresh threshold - refresh when 15 seconds left
-const REFRESH_THRESHOLD_MS = 15 * 1000;
+// Signed URLs are valid for 5 minutes - long enough for smooth reading
+const SIGNED_URL_EXPIRY_SECONDS = 5 * 60; // 5 minutes
+// Refresh threshold - refresh when 60 seconds left (not 15, to reduce churn)
+const REFRESH_THRESHOLD_MS = 60 * 1000;
 
 export function useSegmentManager({
   contentId,
