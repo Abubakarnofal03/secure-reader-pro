@@ -62,7 +62,12 @@ export function useScrollPageDetection({
       (entries) => {
         entries.forEach((entry) => {
           const pageNum = parseInt(entry.target.getAttribute('data-page') || '1', 10);
-          visibilityMap.current.set(pageNum, entry.intersectionRatio);
+          if (entry.isIntersecting) {
+            visibilityMap.current.set(pageNum, entry.intersectionRatio);
+          } else {
+            // Remove from visibility map when page exits viewport
+            visibilityMap.current.delete(pageNum);
+          }
         });
         updateCurrentPage();
       },
