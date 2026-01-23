@@ -132,15 +132,7 @@ const SegmentedPdfPage = memo(({
       <Document
         file={cachedUrl}
         loading={null}
-        error={
-          <div 
-            className="flex flex-col items-center justify-center bg-destructive/10 rounded-sm gap-2"
-            style={{ width: scaledWidth, height: estimatedHeight }}
-          >
-            <AlertTriangle className="h-5 w-5 text-destructive" />
-            <span className="text-xs text-destructive">Failed to load document</span>
-          </div>
-        }
+        error={null}
         onLoadError={handleLoadError}
       >
         <Page

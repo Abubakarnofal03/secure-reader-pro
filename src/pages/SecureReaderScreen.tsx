@@ -23,12 +23,7 @@ import { usePdfOutline } from '@/hooks/usePdfOutline';
 import { useSignedUrlRefresh } from '@/hooks/useSignedUrlRefresh';
 import { useSegmentManager } from '@/hooks/useSegmentManager';
 
-// IMPORTANT (Capacitor): avoid CDN worker (can be blocked by ATS/CSP/offline).
-// Bundle the worker with the app so PDF rendering never depends on external network.
-pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.min.mjs',
-  import.meta.url
-).toString();
+pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
 interface ContentDetails {
   title: string;
