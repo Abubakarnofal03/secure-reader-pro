@@ -1,132 +1,110 @@
 
-# Fix: Jump to Page and Resume Reading for Segmented PDF Reader
+# Server-Side Table of Contents Extraction
 
-## Problem Summary
+## Problem
 
-Both "Jump to Page" and "Resume Reading" features are broken due to a fundamental incompatibility between virtualized rendering and element-based scrolling.
-
-**Technical Root Cause:**
-- The current `scrollToPage` function tries to find a page's DOM element using `pageRefs.current.get(pageNumber)`
-- With virtualization, only ~5 pages around the current view are rendered
-- Jumping to page 50 fails because that page element doesn't exist in the DOM yet
+The PDF reader's Table of Contents feature doesn't work properly for segmented PDFs because:
+- The current `usePdfOutline` hook extracts the outline from the `pdfDocument` object
+- For segmented content, the reader only loads one segment at a time (50 pages each)
+- The outline/bookmarks are stored in the **first segment** of the PDF, but point to pages that may be in other segments
+- The text-based fallback only scans the first 30 pages of the visible segment
 
 ## Solution Overview
 
-Replace the element-based scrolling with position-based scrolling using the virtualizer's built-in `scrollToIndex()` method.
+Extract the Table of Contents during admin upload (when the **full PDF is available**) and store it in the database. The reader will then fetch this pre-extracted TOC instead of trying to extract it from segments.
+
+## Storage Strategy (Cost-Efficient)
+
+### Option A: JSONB Column on `content` Table (Recommended)
+- Add a `table_of_contents` column of type `jsonb` to the `content` table
+- TOC data is typically small (a few KB for even large documents)
+- JSONB is compressed and efficient
+- No additional tables or joins needed
+- Already covered by existing RLS policies
+
+**Data Structure:**
+```json
+{
+  "items": [
+    { "title": "Chapter 1", "page": 1, "items": [...] },
+    { "title": "Chapter 2", "page": 50 }
+  ],
+  "extractedFrom": "bookmarks" | "text",
+  "extractedAt": "2025-01-23T..."
+}
+```
+
+### Why Not a Separate Table?
+- Would require foreign key relationships
+- Additional RLS policies
+- More complex queries
+- Minimal benefit since TOC is always fetched with content
 
 ---
 
 ## Implementation Plan
 
-### Step 1: Update VirtualizedPdfViewer to Expose Scroll Method
+### Step 1: Database Migration
 
-Modify the viewer component to accept an optional callback that provides scroll control:
+Add a new JSONB column to the `content` table:
+
+```sql
+ALTER TABLE content 
+ADD COLUMN table_of_contents jsonb DEFAULT NULL;
+
+COMMENT ON COLUMN content.table_of_contents IS 
+  'Pre-extracted PDF table of contents for segmented content';
+```
+
+### Step 2: Create TOC Extraction Utility
+
+Create a new utility file `src/lib/pdfTocExtractor.ts` that:
+- Takes the full PDF bytes (ArrayBuffer)
+- Uses `pdfjs-dist` to load the document
+- Extracts bookmarks using `getOutline()`
+- Falls back to text-based heading extraction if no bookmarks
+- Returns the structured TOC data
 
 ```text
-┌─────────────────────────────────────────────────────────────┐
-│  VirtualizedPdfViewer                                       │
-│  ┌───────────────────────────────────────────────────────┐  │
-│  │  useVirtualizer({ ... })                              │  │
-│  │       │                                               │  │
-│  │       ▼                                               │  │
-│  │  virtualizer.scrollToIndex(pageIndex)  ◄── exposed   │  │
-│  └───────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
-                          │
-                          ▼
-┌─────────────────────────────────────────────────────────────┐
-│  SecureReaderScreen                                         │
-│  ┌───────────────────────────────────────────────────────┐  │
-│  │  scrollToPage() ──► calls virtualizer ref method      │  │
-│  └───────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────┐
+│  extractTableOfContents(pdfBytes: ArrayBuffer)            │
+│                                                           │
+│  1. Load PDF with pdfjs-dist                              │
+│  2. Try getOutline() for bookmarks                        │
+│  3. If empty → scan pages for large-font headings         │
+│  4. Return structured outline with page numbers           │
+└───────────────────────────────────────────────────────────┘
 ```
 
-**Changes to `VirtualizedPdfViewer.tsx`:**
-- Accept a new prop: `onReady?: (api: { scrollToPage: (page: number, behavior?: ScrollBehavior) => void }) => void`
-- Call `onReady` when the virtualizer is initialized, passing a function that uses `virtualizer.scrollToIndex()`
+### Step 3: Modify ContentUpload Component
 
-### Step 2: Update SecureReaderScreen to Use New Scroll API
+Update `src/components/admin/ContentUpload.tsx` to:
+1. After reading the PDF, extract the TOC before splitting into segments
+2. Include the TOC data in the content insert query
+3. Show "Extracting contents..." in the upload status
 
-**Changes to `SecureReaderScreen.tsx`:**
-- Create a ref to store the virtualizer's scroll function
-- Pass `onReady` callback to `VirtualizedPdfViewer` to capture the scroll method
-- Update `goToPage`, `handleResume`, and `handleStartOver` to use the new method
-- Remove dependency on `useScrollPageDetection`'s `scrollToPage` for navigation
+**Upload Flow:**
+```text
+Read PDF → Extract TOC → Split Segments → Create Record (with TOC) → Upload Segments
+```
 
-### Step 3: Pre-fetch Segment When Jumping (for Segmented Content)
+### Step 4: Update SecureReaderScreen
 
-**Changes to `useSegmentManager.ts`:**
-- Add a new function `prefetchSegmentForPage(pageNumber)` that fetches the URL for a specific page's segment
-- Export this function so the reader can call it before scrolling
+Modify `src/pages/SecureReaderScreen.tsx` to:
+1. Fetch `table_of_contents` from the content record
+2. If TOC exists in DB, use it directly (skip `usePdfOutline`)
+3. Fall back to `usePdfOutline` for legacy content without stored TOC
 
-**Changes to `SecureReaderScreen.tsx`:**
-- When jumping to a page in segmented mode, first call `prefetchSegmentForPage(targetPage)`
-- Wait for the segment URL to be available (or timeout after 2 seconds)
-- Then perform the scroll
+### Step 5: Update Types
 
-### Step 4: Handle Initial Page Load for Resume Reading
-
-**Changes to `SecureReaderScreen.tsx`:**
-- Add an effect that runs once when:
-  - `savedProgress` is available AND
-  - `numPages > 0` AND
-  - The virtualizer is ready
-- This effect will automatically scroll to the saved page on initial load (when user dismisses the prompt)
-
----
-
-## Technical Details
-
-### New VirtualizedPdfViewer Props
+Add the TOC type to the Supabase types or create a local interface:
 
 ```typescript
-interface VirtualizedPdfViewerProps {
-  // ... existing props ...
-  onReady?: (api: { 
-    scrollToPage: (page: number, behavior?: ScrollBehavior) => void 
-  }) => void;
+interface StoredTableOfContents {
+  items: OutlineItem[];
+  extractedFrom: 'bookmarks' | 'text';
+  extractedAt: string;
 }
-```
-
-### Updated scrollToPage Implementation
-
-```typescript
-// Inside VirtualizedPdfViewer
-const scrollToPage = useCallback((page: number, behavior: ScrollBehavior = 'smooth') => {
-  const pageIndex = page - 1; // Convert 1-based to 0-based index
-  virtualizer.scrollToIndex(pageIndex, { 
-    align: 'start',
-    behavior 
-  });
-}, [virtualizer]);
-
-// Call onReady when component mounts
-useEffect(() => {
-  if (isReady && onReady) {
-    onReady({ scrollToPage });
-  }
-}, [isReady, onReady, scrollToPage]);
-```
-
-### Segment Prefetch for Jump
-
-```typescript
-// In SecureReaderScreen
-const goToPage = useCallback(async (page: number) => {
-  if (page < 1 || page > numPages) return;
-  
-  // For segmented content, prefetch the target segment first
-  if (isSegmented) {
-    const segment = getSegmentForPage(page);
-    if (segment) {
-      await prefetchSegmentForPage(page);
-    }
-  }
-  
-  // Use virtualizer's scroll method
-  viewerApiRef.current?.scrollToPage(page, 'smooth');
-}, [numPages, isSegmented, getSegmentForPage, prefetchSegmentForPage]);
 ```
 
 ---
@@ -135,27 +113,122 @@ const goToPage = useCallback(async (page: number) => {
 
 | File | Changes |
 |------|---------|
-| `src/components/reader/VirtualizedPdfViewer.tsx` | Add `onReady` prop, expose `scrollToPage` via callback |
-| `src/hooks/useSegmentManager.ts` | Add `prefetchSegmentForPage()` function |
-| `src/pages/SecureReaderScreen.tsx` | Update scroll logic to use virtualizer API, add segment prefetch |
+| `supabase/migrations/` | Add `table_of_contents` JSONB column |
+| `src/lib/pdfTocExtractor.ts` | New file: Extract TOC from full PDF |
+| `src/components/admin/ContentUpload.tsx` | Call TOC extractor, save to DB |
+| `src/pages/SecureReaderScreen.tsx` | Fetch and use stored TOC |
 
 ---
 
-## Expected Behavior After Fix
+## Technical Details
 
-1. **Jump to Page Dialog**: User enters page 100 → system prefetches segment if needed → virtualizer scrolls to position → page 100 renders and displays
+### TOC Extraction Logic (pdfTocExtractor.ts)
 
-2. **Resume Reading Toast**: User clicks "Resume" → system scrolls to saved page position → user continues from where they left off
+```typescript
+import * as pdfjs from 'pdfjs-dist';
 
-3. **Start Over**: User clicks "Start over" → scrolls to page 1 → reading restarts
+export interface TocItem {
+  title: string;
+  pageNumber: number;
+  items?: TocItem[];
+}
 
-4. **Segment Prefetch**: When jumping to a distant page, the target segment is fetched before scrolling, ensuring the page is ready to render when the user arrives
+export interface ExtractedToc {
+  items: TocItem[];
+  extractedFrom: 'bookmarks' | 'text';
+  extractedAt: string;
+}
+
+export async function extractTableOfContents(
+  pdfBytes: ArrayBuffer
+): Promise<ExtractedToc | null> {
+  const pdf = await pdfjs.getDocument({ data: pdfBytes }).promise;
+  
+  // Try bookmarks first
+  const outline = await pdf.getOutline();
+  if (outline && outline.length > 0) {
+    const items = await processOutlineItems(pdf, outline);
+    return {
+      items,
+      extractedFrom: 'bookmarks',
+      extractedAt: new Date().toISOString(),
+    };
+  }
+  
+  // Fall back to text-based extraction
+  const headings = await extractHeadingsFromText(pdf);
+  if (headings.length > 0) {
+    return {
+      items: headings,
+      extractedFrom: 'text',
+      extractedAt: new Date().toISOString(),
+    };
+  }
+  
+  return null;
+}
+```
+
+### ContentUpload Integration
+
+```typescript
+// After reading PDF bytes
+setUploadStatus('Extracting table of contents...');
+const tocData = await extractTableOfContents(arrayBuffer);
+
+// Include in content insert
+const { data: contentData } = await supabase
+  .from('content')
+  .insert({
+    title: title.trim(),
+    // ... other fields
+    table_of_contents: tocData,
+  })
+  .select('id')
+  .single();
+```
+
+### Reader Integration
+
+```typescript
+// In SecureReaderScreen
+const [storedToc, setStoredToc] = useState<ExtractedToc | null>(null);
+
+// Fetch content with TOC
+const { data: contentData } = await supabase
+  .from('content')
+  .select('*, table_of_contents')
+  .eq('id', id)
+  .single();
+
+// If stored TOC exists, use it
+if (contentData.table_of_contents) {
+  setStoredToc(contentData.table_of_contents);
+}
+
+// In render - prefer stored TOC over extracted
+const effectiveOutline = storedToc?.items || outline;
+const effectiveHasOutline = storedToc ? storedToc.items.length > 0 : hasOutline;
+```
 
 ---
 
-## Edge Cases Handled
+## Edge Cases
 
-- **Jumping before virtualizer ready**: The scroll command is queued until the virtualizer initializes
-- **Jumping to invalid page**: Validated before scroll (page must be 1 ≤ page ≤ numPages)
-- **Segment fetch failure**: Scroll proceeds anyway, page shows loading spinner, segment retries automatically
-- **Very fast jumps**: Previous segment fetches are not cancelled, but new target takes priority
+| Scenario | Handling |
+|----------|----------|
+| PDF has no bookmarks or headings | Store `null`, show "No Contents Available" |
+| Legacy content (pre-migration) | Fall back to `usePdfOutline` |
+| Very long TOC (1000+ items) | JSONB handles this efficiently |
+| Re-upload/replace PDF | Update TOC when file is replaced |
+| Corrupt PDF during upload | Skip TOC extraction, proceed with upload |
+
+---
+
+## Benefits
+
+1. **Works with segmented PDFs**: Full document is available during upload
+2. **Instant TOC loading**: No extraction delay in reader
+3. **Low cost**: JSONB is compact, no additional tables
+4. **Backward compatible**: Legacy content still uses client extraction
+5. **Better accuracy**: Full document means complete heading detection
