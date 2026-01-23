@@ -26,6 +26,13 @@ import { ExtractedToc } from '@/lib/pdfTocExtractor';
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
+// PDF.js options for proper rendering of fonts, characters, and embedded content
+const pdfOptions = {
+  cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfjs.version}/cmaps/`,
+  cMapPacked: true,
+  standardFontDataUrl: `https://unpkg.com/pdfjs-dist@${pdfjs.version}/standard_fonts/`,
+};
+
 interface ContentDetails {
   title: string;
   signedUrl: string;
@@ -701,11 +708,11 @@ export default function SecureReaderScreen() {
         
         <div 
           ref={scrollContainerRef}
-          className="h-full overflow-auto overscroll-none"
+          className="h-full overflow-x-auto overflow-y-auto overscroll-none"
           style={{
             WebkitOverflowScrolling: 'touch',
-            // Prevent pull-to-refresh
-            overscrollBehavior: 'none',
+            // Enable pan/pinch gestures for zoomed scrolling
+            touchAction: 'pan-x pan-y pinch-zoom',
           }}
         >
           {/* Content wrapper - width adapts to zoomed page width */}
@@ -746,6 +753,7 @@ export default function SecureReaderScreen() {
             <Document
               file={pdfSource}
               onLoadSuccess={(loadedDoc) => onDocumentLoadSuccess({ numPages: loadedDoc.numPages }, loadedDoc)}
+              options={pdfOptions}
               loading={
                 <div className="flex flex-col items-center justify-center py-20">
                   <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
