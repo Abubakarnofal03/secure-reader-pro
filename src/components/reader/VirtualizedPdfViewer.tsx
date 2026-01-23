@@ -1,7 +1,8 @@
-import { useRef, useCallback, useEffect, useState, memo, RefObject, useMemo } from 'react';
+import { useRef, useCallback, useEffect, useState, memo, RefObject } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Document, Page } from 'react-pdf';
 import { Loader2, AlertTriangle } from 'lucide-react';
+import { useSegmentDocumentCache } from '@/hooks/useSegmentDocumentCache';
 
 interface Segment {
   id: string;
@@ -35,24 +36,26 @@ interface VirtualizedPdfViewerProps {
 }
 
 // Segmented page component - renders a page from a specific segment
+// Now accepts a STABLE cached URL to prevent re-downloads
 const SegmentedPdfPage = memo(({ 
   globalPageNumber,
   segment,
-  segmentUrl,
+  cachedUrl,
   scaledWidth,
   estimatedHeight,
   registerPage,
-  isLoadingUrl,
+  onLoadError,
 }: { 
   globalPageNumber: number;
-  segment: Segment;
-  segmentUrl: string | null;
+  segment: { segment_index: number; start_page: number; end_page: number };
+  cachedUrl: string | null;
   scaledWidth: number;
   estimatedHeight: number;
   registerPage: (pageNumber: number, element: HTMLDivElement | null) => void;
-  isLoadingUrl: boolean;
+  onLoadError?: (segmentIndex: number) => void;
 }) => {
   const pageRef = useRef<HTMLDivElement>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   
   // Calculate local page number within the segment
   const localPageNumber = globalPageNumber - segment.start_page + 1;
@@ -67,8 +70,21 @@ const SegmentedPdfPage = memo(({
     };
   }, [globalPageNumber, registerPage]);
 
-  // Show loading while fetching segment URL
-  if (!segmentUrl || isLoadingUrl) {
+  // Reset load state when URL changes
+  useEffect(() => {
+    if (cachedUrl) {
+      setLoadFailed(false);
+    }
+  }, [cachedUrl]);
+
+  // Handle load error
+  const handleLoadError = useCallback(() => {
+    setLoadFailed(true);
+    onLoadError?.(segment.segment_index);
+  }, [segment.segment_index, onLoadError]);
+
+  // Show loading while waiting for URL
+  if (!cachedUrl) {
     return (
       <div
         data-page={globalPageNumber}
@@ -86,6 +102,26 @@ const SegmentedPdfPage = memo(({
     );
   }
 
+  // Show error state
+  if (loadFailed) {
+    return (
+      <div
+        data-page={globalPageNumber}
+        ref={pageRef}
+        className="flex justify-center"
+        style={{ width: scaledWidth }}
+      >
+        <div 
+          className="flex flex-col items-center justify-center bg-destructive/10 rounded-sm gap-2"
+          style={{ width: scaledWidth, height: estimatedHeight }}
+        >
+          <AlertTriangle className="h-5 w-5 text-destructive" />
+          <span className="text-xs text-destructive">Failed to load</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       data-page={globalPageNumber}
@@ -94,9 +130,10 @@ const SegmentedPdfPage = memo(({
       style={{ width: scaledWidth }}
     >
       <Document
-        file={segmentUrl}
+        file={cachedUrl}
         loading={null}
         error={null}
+        onLoadError={handleLoadError}
       >
         <Page
           pageNumber={localPageNumber}
@@ -126,11 +163,12 @@ const SegmentedPdfPage = memo(({
     </div>
   );
 }, (prevProps, nextProps) => {
+  // Only re-render if essential props change
+  // IMPORTANT: cachedUrl should be STABLE once loaded, so this rarely triggers
   return prevProps.globalPageNumber === nextProps.globalPageNumber && 
          prevProps.scaledWidth === nextProps.scaledWidth &&
          prevProps.estimatedHeight === nextProps.estimatedHeight &&
-         prevProps.segmentUrl === nextProps.segmentUrl &&
-         prevProps.isLoadingUrl === nextProps.isLoadingUrl &&
+         prevProps.cachedUrl === nextProps.cachedUrl &&
          prevProps.segment.segment_index === nextProps.segment.segment_index;
 });
 
@@ -216,6 +254,9 @@ export function VirtualizedPdfViewer({
 }: VirtualizedPdfViewerProps) {
   const [isReady, setIsReady] = useState(false);
 
+  // Document cache to prevent constant re-downloads when URLs refresh
+  const { getStableUrl, markFailed } = useSegmentDocumentCache();
+
   // Calculate scaled dimensions
   const scaledWidth = Math.round(pageWidth * scale);
   const scaledHeight = Math.round(scaledWidth * 1.4); // Maintain aspect ratio
@@ -238,6 +279,12 @@ export function VirtualizedPdfViewer({
   const stableRegisterPage = useCallback((pageNumber: number, element: HTMLDivElement | null) => {
     registerPage(pageNumber, element);
   }, [registerPage]);
+
+  // Handle segment load failure - clear from cache so we try fresh URL
+  const handleSegmentLoadError = useCallback((segmentIndex: number) => {
+    console.warn(`[VirtualizedPdfViewer] Segment ${segmentIndex} failed to load, clearing cache`);
+    markFailed(segmentIndex);
+  }, [markFailed]);
 
   const virtualizer = useVirtualizer({
     count: numPages,
@@ -320,7 +367,10 @@ export function VirtualizedPdfViewer({
             );
           }
 
-          const segmentUrl = getSegmentUrl!(segment.segment_index);
+          // Get fresh URL from segment manager
+          const freshUrl = getSegmentUrl!(segment.segment_index);
+          // Get stable URL from cache - prevents re-downloads when URL refreshes
+          const cachedUrl = getStableUrl(segment.segment_index, freshUrl);
           
           return (
             <div
@@ -335,11 +385,11 @@ export function VirtualizedPdfViewer({
               <SegmentedPdfPage
                 globalPageNumber={globalPageNumber}
                 segment={segment}
-                segmentUrl={segmentUrl}
+                cachedUrl={cachedUrl}
                 scaledWidth={scaledWidth}
                 estimatedHeight={scaledHeight}
                 registerPage={stableRegisterPage}
-                isLoadingUrl={isLoadingSegment && !segmentUrl}
+                onLoadError={handleSegmentLoadError}
               />
             </div>
           );
