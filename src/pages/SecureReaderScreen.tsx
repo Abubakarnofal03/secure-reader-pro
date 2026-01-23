@@ -688,7 +688,7 @@ export default function SecureReaderScreen() {
       {/* PDF Viewer */}
       <main 
         ref={contentRef}
-        className="relative flex-1"
+        className="relative flex-1 overflow-hidden"
       >
         <Watermark sessionId={sessionId} />
         
@@ -700,26 +700,32 @@ export default function SecureReaderScreen() {
         
         <div 
           ref={scrollContainerRef}
-          className="h-full overflow-auto overscroll-none scroll-smooth"
+          className="h-full overflow-auto overscroll-none"
           style={{
             WebkitOverflowScrolling: 'touch',
             // Prevent pull-to-refresh
             overscrollBehavior: 'none',
           }}
         >
+          {/* Outer wrapper sets the scrollable area size based on zoom */}
           <div
-            ref={pdfWrapperRef}
-            className="py-4"
             style={{
-              // Apply CSS transform for browser-like zoom
-              transform: scale !== 1 ? `scale(${scale})` : undefined,
-              transformOrigin: 'top left',
-              // Set explicit dimensions for zoomed content to enable 2D scrolling
+              // When zoomed, this wrapper has the scaled dimensions for proper scrolling
               width: isZoomed ? `${Math.round(pageWidth * scale) + 32}px` : '100%',
               minWidth: '100%',
-              minHeight: isZoomed ? `${100 * scale}%` : undefined,
+              // Height is handled by the content inside
             }}
           >
+            {/* Inner wrapper applies the CSS transform */}
+            <div
+              ref={pdfWrapperRef}
+              className="py-4"
+              style={{
+                // Apply CSS transform for browser-like zoom
+                transform: scale !== 1 ? `scale(${scale})` : undefined,
+                transformOrigin: 'top left',
+              }}
+            >
             {/* Segmented content: VirtualizedPdfViewer handles its own Documents */}
             {!isLegacyContent && isSegmented && numPages > 0 && id && (
               <VirtualizedPdfViewer
@@ -783,6 +789,7 @@ export default function SecureReaderScreen() {
                 <p className="text-sm text-muted-foreground">Preparing content...</p>
               </div>
             )}
+          </div>
           </div>
         </div>
       </main>
