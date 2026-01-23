@@ -68,6 +68,8 @@ export default function SecureReaderScreen() {
   const [showToc, setShowToc] = useState(false);
   const [contentCategory, setContentCategory] = useState<string | null>(null);
   const [isLegacyContent, setIsLegacyContent] = useState(false);
+  const [isJumpingToPage, setIsJumpingToPage] = useState(false);
+  const [jumpTargetPage, setJumpTargetPage] = useState<number | null>(null);
   
   // Store the PDF URL in a ref so refreshes don't trigger re-renders
   const pdfUrlRef = useRef<string | null>(null);
@@ -452,26 +454,55 @@ export default function SecureReaderScreen() {
   const goToPage = useCallback(async (page: number) => {
     if (page < 1 || page > numPages) return;
     
-    // For segmented content, prefetch the target segment first
-    if (isSegmented && prefetchSegmentForPage) {
-      await prefetchSegmentForPage(page);
-    }
+    setIsJumpingToPage(true);
+    setJumpTargetPage(page);
     
-    // Use virtualizer's scroll method
-    viewerApiRef.current?.scrollToPage(page, true);
+    try {
+      // For segmented content, prefetch the target segment first
+      if (isSegmented && prefetchSegmentForPage) {
+        await prefetchSegmentForPage(page);
+      }
+      
+      // Use virtualizer's scroll method
+      viewerApiRef.current?.scrollToPage(page, true);
+      
+      // Small delay to let the scroll complete
+      setTimeout(() => {
+        setIsJumpingToPage(false);
+        setJumpTargetPage(null);
+      }, 500);
+    } catch (err) {
+      console.error('Error jumping to page:', err);
+      setIsJumpingToPage(false);
+      setJumpTargetPage(null);
+    }
   }, [numPages, isSegmented, prefetchSegmentForPage]);
 
   const handleResume = useCallback(async () => {
     if (savedProgress) {
-      // For segmented content, prefetch the target segment first
-      if (isSegmented && prefetchSegmentForPage) {
-        await prefetchSegmentForPage(savedProgress.currentPage);
-      }
+      setIsJumpingToPage(true);
+      setJumpTargetPage(savedProgress.currentPage);
       
-      // Small delay to ensure viewer is ready
-      setTimeout(() => {
-        viewerApiRef.current?.scrollToPage(savedProgress.currentPage, true);
-      }, 100);
+      try {
+        // For segmented content, prefetch the target segment first
+        if (isSegmented && prefetchSegmentForPage) {
+          await prefetchSegmentForPage(savedProgress.currentPage);
+        }
+        
+        // Small delay to ensure viewer is ready
+        setTimeout(() => {
+          viewerApiRef.current?.scrollToPage(savedProgress.currentPage, true);
+          
+          setTimeout(() => {
+            setIsJumpingToPage(false);
+            setJumpTargetPage(null);
+          }, 500);
+        }, 100);
+      } catch (err) {
+        console.error('Error resuming:', err);
+        setIsJumpingToPage(false);
+        setJumpTargetPage(null);
+      }
     }
     dismissResumePrompt();
   }, [savedProgress, dismissResumePrompt, isSegmented, prefetchSegmentForPage]);
@@ -544,6 +575,18 @@ export default function SecureReaderScreen() {
         screenshotDetected={screenshotDetected}
         onDismiss={clearScreenshotAlert}
       />
+
+      {/* Page Jump Loading Overlay */}
+      {isJumpingToPage && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-3 rounded-2xl bg-card p-6 shadow-lg border border-border">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <p className="text-sm font-medium text-foreground">
+              Jumping to page {jumpTargetPage}...
+            </p>
+          </div>
+        </div>
+      )}
 
       <ResumeReadingToast
         show={showResumePrompt && numPages > 0}
