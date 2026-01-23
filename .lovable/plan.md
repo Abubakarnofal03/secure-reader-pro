@@ -1,245 +1,210 @@
 
-# Rebuild PDF Reader: On-Demand Server Rendering with Caching
 
-## Understanding Your Constraints
+# Fix Plan: Scroll/Zoom Issues and Upload ArrayBuffer Error
 
-You've identified a critical issue: **pre-rendering 1600-page PDFs to images would consume 300-500MB per document**, quickly exhausting your Supabase storage quota. This rules out the pre-render approach.
+## Issue 1: Cannot Scroll Left/Right When Zoomed
 
-Your preferred solution is **on-demand server-side rendering**: when a user opens a page, the server renders it to an image (with watermark) and streams it to the client.
+### Root Cause
+The scroll container in `SecureReaderScreen.tsx` (lines 702-719) has `overflow-auto` which should allow scrolling, but there are CSS/layout issues preventing horizontal scrolling:
 
-## Technical Reality Check
+1. The content wrapper sets `width` but mobile browsers may not interpret this correctly for horizontal scroll
+2. The `overscroll-behavior: none` may interfere with horizontal panning
+3. Missing `touch-action` CSS that allows pan-x and pan-y
 
-After researching Supabase Edge Functions limitations:
-
-| Capability | Status |
-|------------|--------|
-| Sharp (native image library) | Not supported (requires Node.js native modules) |
-| @napi-rs/canvas | Not supported (native bindings) |
-| magick-wasm | Supported (WASM-based) - but for image manipulation, not PDF rendering |
-| pdfjs-dist (browser version) | Requires DOM/Canvas |
-| pdfjs-serverless | Text extraction only, no image rendering |
-| Memory limit | Edge Functions have resource limits, large PDFs may fail |
-
-**Bottom line**: True PDF-to-image rendering in Supabase Edge Functions is currently not feasible without external services.
-
-## Proposed Solution: Fix Client-Side Rendering Properly
-
-Since server-side rendering isn't viable within your cost constraints, the best path forward is to **fix the current client-side react-pdf implementation** properly. The issues you're seeing (missing content, zoom problems, no page separation) are all fixable without changing the architecture.
-
-### Why Content is "Being Eaten Up"
-
-The current implementation has:
-```typescript
-renderTextLayer={false}
-renderAnnotationLayer={false}
-```
-
-This disables:
-- **Text layer**: Selectable text overlays
-- **Annotation layer**: Links, form fields, embedded content
-
-Some PDFs (especially medical/scientific) use text layers for critical content. Disabling them causes missing text.
-
-### Why Zoom is Broken
-
-The current approach uses CSS `transform: scale()` on a virtualized container. This fundamentally conflicts with virtualization because:
-- The virtualizer calculates scroll positions based on unscaled dimensions
-- CSS transforms don't affect document flow
-- Scroll coordinates become misaligned
-
-### Why Pages Blend Together
-
-No visual separator or page number indicator between pages - just continuous content.
-
----
-
-## Implementation Plan
-
-### Phase 1: Fix Content Rendering (Missing Text/Images)
-
-**File: `src/components/reader/VirtualizedPdfViewer.tsx`**
-
-1. Enable text and annotation layers:
-```typescript
-<Page
-  pageNumber={localPageNumber}
-  width={scaledWidth}
-  renderTextLayer={true}      // Enable text layer
-  renderAnnotationLayer={true} // Enable annotations/links
-  ...
-/>
-```
-
-2. Import required CSS for layers:
-```typescript
-import 'react-pdf/dist/esm/Page/TextLayer.css';
-import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
-```
-
-3. Add CSS to hide text layer visually (for security) while keeping content:
-```css
-.react-pdf__Page__textContent {
-  opacity: 0;
-  pointer-events: none;
-}
-```
-
-### Phase 2: Add Clear Page Separation
-
-**New Component: `src/components/reader/PageSeparator.tsx`**
-
-Create a visual separator between pages:
-```typescript
-export function PageSeparator({ pageNumber }: { pageNumber: number }) {
-  return (
-    <div className="w-full flex items-center justify-center py-3 my-2">
-      <div className="flex-1 h-px bg-border" />
-      <span className="px-3 text-xs text-muted-foreground font-medium bg-background">
-        Page {pageNumber}
-      </span>
-      <div className="flex-1 h-px bg-border" />
-    </div>
-  );
-}
-```
-
-Integrate into `VirtualizedPdfViewer.tsx` to show after each page (except the last).
-
-### Phase 3: Fix Zoom with Native Approach
-
-**Strategy**: Remove CSS transform zoom entirely. Instead, use **actual page re-rendering at different widths**.
-
-**Why this works better**:
-- Virtualizer works with correct dimensions
-- No scroll position conflicts
-- Text stays crisp at any zoom level
-- Native scrolling works perfectly
-
-**File: `src/hooks/usePinchZoom.ts`**
-
-Simplify to just control `zoomLevel` (1, 1.25, 1.5, 1.75, 2):
-```typescript
-export function usePinchZoom({ minScale = 1, maxScale = 2 }) {
-  const [zoomLevel, setZoomLevel] = useState(1);
-  
-  const zoomIn = useCallback(() => {
-    setZoomLevel(prev => Math.min(maxScale, prev + 0.25));
-  }, [maxScale]);
-  
-  const zoomOut = useCallback(() => {
-    setZoomLevel(prev => Math.max(minScale, prev - 0.25));
-  }, [minScale]);
-  
-  const resetZoom = useCallback(() => setZoomLevel(1), []);
-  
-  return { zoomLevel, zoomIn, zoomOut, resetZoom };
-}
-```
+### Solution
+Update the scroll container and content wrapper CSS to explicitly enable omnidirectional scrolling:
 
 **File: `src/pages/SecureReaderScreen.tsx`**
+- Add `overflow-x-auto` and `overflow-y-auto` explicitly (instead of just `overflow-auto`)
+- Remove `overscrollBehavior: 'none'` from inline styles (this blocks panning gestures)
+- Add `touch-action: pan-x pan-y` to allow finger-based panning in both directions
+- Ensure the content wrapper has proper minimum width to trigger horizontal scroll
 
-Calculate `pageWidth` based on zoom:
-```typescript
-const baseWidth = window.innerWidth - 32;
-const pageWidth = Math.round(baseWidth * zoomLevel);
-```
+```text
+Before (line 704):
+┌──────────────────────────────────────────┐
+│ className="h-full overflow-auto ..."     │
+│ style={{                                 │
+│   overscrollBehavior: 'none',  ← Blocks! │
+│ }}                                       │
+└──────────────────────────────────────────┘
 
-Remove all CSS transform code from the PDF wrapper.
-
-**File: `src/components/reader/VirtualizedPdfViewer.tsx`**
-
-The virtualizer now receives the zoomed `pageWidth` directly:
-- Pages render at the correct size
-- Virtualizer calculates correct scroll positions
-- Horizontal scrolling works naturally when content exceeds viewport
-
-### Phase 4: Proper Page Dimensions
-
-**File: `src/components/reader/VirtualizedPdfViewer.tsx`**
-
-Currently using hardcoded aspect ratio:
-```typescript
-const scaledHeight = Math.round(scaledWidth * 1.4); // Hardcoded 1.4 ratio
-```
-
-Add a page dimension cache that stores actual heights after first render:
-```typescript
-const [pageDimensions, setPageDimensions] = useState<Map<number, number>>(new Map());
-
-// In Page onRenderSuccess callback
-onRenderSuccess={(page) => {
-  const height = page.height;
-  setPageDimensions(prev => new Map(prev).set(pageNumber, height));
-}}
-```
-
-Update virtualizer to use dynamic heights:
-```typescript
-const virtualizer = useVirtualizer({
-  count: numPages,
-  getScrollElement: () => scrollContainerRef.current,
-  estimateSize: (index) => {
-    const pageNum = index + 1;
-    return (pageDimensions.get(pageNum) || scaledHeight) + pageGap;
-  },
-  ...
-});
+After:
+┌──────────────────────────────────────────────┐
+│ className="h-full overflow-x-auto            │
+│            overflow-y-auto overscroll-none"  │
+│ style={{                                     │
+│   touchAction: 'pan-x pan-y pinch-zoom',     │
+│ }}                                           │
+└──────────────────────────────────────────────┘
 ```
 
 ---
 
-## Files to Modify
+## Issue 2: Upload Fails with "Cannot Construct on Detached ArrayBuffer"
 
-| File | Changes |
-|------|---------|
-| `src/components/reader/VirtualizedPdfViewer.tsx` | Enable text/annotation layers, add page separators, use dynamic dimensions |
-| `src/components/reader/PageSeparator.tsx` | New component for visual page dividers |
-| `src/hooks/usePinchZoom.ts` | Simplify to control zoom level without CSS transforms |
-| `src/pages/SecureReaderScreen.tsx` | Remove CSS transform zoom, calculate pageWidth from zoom level |
-| `src/index.css` | Add CSS to hide text layer for security while keeping rendering |
+### Root Cause
+In `ContentUpload.tsx`, the upload flow:
+
+1. **Line 158**: Reads PDF as ArrayBuffer: `await selectedFile.arrayBuffer()`
+2. **Line 165**: Passes to TOC extraction: `extractTableOfContents(arrayBuffer)`
+   - Inside, `pdfjs.getDocument({ data: pdfBytes })` **transfers** the ArrayBuffer
+3. **Line 178**: Tries to reuse same ArrayBuffer: `splitPdfIntoSegments(arrayBuffer)`
+   - This fails because the ArrayBuffer is now **detached**
+
+When `pdfjs.getDocument()` receives an ArrayBuffer, it transfers ownership by default, making the original ArrayBuffer unusable (detached).
+
+### Solution
+Create a copy of the ArrayBuffer before passing to `extractTableOfContents()`, or read the file twice. The cleanest approach is to copy the ArrayBuffer:
+
+**File: `src/components/admin/ContentUpload.tsx`**
+
+```typescript
+// Line 158-165: Create a copy for TOC extraction
+const arrayBuffer = await selectedFile.arrayBuffer();
+
+// Create a copy for TOC extraction (pdfjs detaches the original)
+const tocArrayBuffer = arrayBuffer.slice(0);
+
+// Use the copy for TOC
+setUploadStatus('Extracting table of contents...');
+setUploadProgress(8);
+let tocData = null;
+try {
+  tocData = await extractTableOfContents(tocArrayBuffer);
+  // ...
+}
+
+// Original arrayBuffer is still intact for splitPdfIntoSegments
+setUploadStatus('Splitting PDF into segments...');
+setUploadProgress(12);
+const segments = await splitPdfIntoSegments(arrayBuffer);
+```
+
+The key change is `arrayBuffer.slice(0)` which creates a complete copy of the ArrayBuffer that can be detached independently.
 
 ---
 
-## Expected Improvements
+## Summary of Changes
 
-| Issue | Before | After |
-|-------|--------|-------|
-| Missing content | Text/annotation layers disabled | Enabled (content renders fully) |
-| Zoom broken | CSS transform conflicts with virtualizer | Native width-based zoom, smooth scrolling |
-| No page separation | Continuous flow | Clear separators with page numbers |
-| Scroll issues | Transform breaks scroll math | Natural scrolling at all zoom levels |
+| File | Change |
+|------|--------|
+| `src/pages/SecureReaderScreen.tsx` | Update scroll container CSS to enable omnidirectional pan/scroll when zoomed |
+| `src/components/admin/ContentUpload.tsx` | Copy ArrayBuffer before TOC extraction to prevent detachment error |
 
----
+## Technical Details
 
-## Alternative: External Rendering Service (Future)
+### Why `ArrayBuffer.slice(0)` Works
+- `ArrayBuffer.slice()` creates a new ArrayBuffer with copied bytes
+- The original and copy are independent - detaching one doesn't affect the other
+- `slice(0)` means "copy from index 0 to end" = full copy
 
-If you later want true server-side rendering, you could:
-1. Use a paid API like **CloudConvert**, **pdf.co**, or **Adobe PDF Services**
-2. Build a separate **Node.js microservice** (not Edge Function) with Sharp/Canvas
-3. Cache rendered pages temporarily (1-hour TTL) to reduce API calls
+### Why `touch-action: pan-x pan-y` is Needed
+- Mobile browsers use touch-action CSS to determine which gestures to allow
+- Without it, the browser may capture pan gestures for navigation (back/forward swipe)
+- `pan-x pan-y` explicitly allows finger panning in both directions
+- `pinch-zoom` allows native browser pinch zoom gestures
 
-These add cost but would enable:
-- Perfect watermark embedding in the image itself
-- No client-side PDF parsing
-- Consistent rendering across devices
+Fix Missing Images in PDF Reader
+Problem Analysis
+After investigating the codebase and researching react-pdf configuration, I identified the root cause of missing images and content in the PDF reader.
 
-For now, the client-side fix is the most practical path forward.
+Root Cause: Missing PDF.js Configuration Options
+The Document components in both VirtualizedPdfViewer.tsx (segmented mode) and SecureReaderScreen.tsx (legacy mode) are missing the options prop that provides critical resources to the PDF.js rendering engine:
 
----
 
-## Technical Notes
+Current Code (both files):
+┌─────────────────────────────────┐
+│ <Document                       │
+│   file={pdfUrl}                 │
+│   ...                           │
+│ >  ← Missing 'options' prop!    │
+└─────────────────────────────────┘
+What's Missing
+Option	Purpose	Impact When Missing
+cMapUrl	URL to character map files for fonts	Non-Latin text, special characters may not render
+cMapPacked	Indicates CMaps are in compressed format	Required when using CDN CMaps
+standardFontDataUrl	URL to standard PDF font data	Standard PDF fonts may render incorrectly or not at all
+PDFs often embed content in ways that require these external resources to render properly. Medical PDFs are particularly affected because they frequently use:
 
-### Security Consideration
-With `renderTextLayer={true}`, the text becomes potentially selectable. We mitigate this by:
-1. CSS: `opacity: 0; pointer-events: none;` on text layer
-2. Existing event listeners blocking copy/paste/select
-3. The watermark overlay
+Special symbols and characters
+Embedded fonts that reference standard PDF fonts
+Complex layouts that mix text and images
+Solution
+Add the options prop to all Document components with proper CDN URLs for PDF.js resources.
 
-### Performance
-Re-rendering pages at different widths is actually fine because:
-- react-pdf caches rendered pages internally
-- Virtualizer only renders visible pages (5-7 at a time)
-- Zoom changes are infrequent user actions
+Files to Modify
+src/components/reader/VirtualizedPdfViewer.tsx
 
-### Bundle Size
-No new dependencies needed - this is all about properly using react-pdf features that are already installed.
+Add pdfjs import from react-pdf
+Create options constant with CDN URLs
+Apply options to the Document component in SegmentedPdfPage
+src/pages/SecureReaderScreen.tsx
+
+Create options constant with CDN URLs
+Apply options to the legacy Document component
+Implementation Details
+Step 1: Update VirtualizedPdfViewer.tsx
+
+// At the top of the file, add pdfjs import
+import { Document, Page, pdfjs } from 'react-pdf';
+
+// Create options constant (outside component)
+const pdfOptions = {
+  cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfjs.version}/cmaps/`,
+  cMapPacked: true,
+  standardFontDataUrl: `https://unpkg.com/pdfjs-dist@${pdfjs.version}/standard_fonts/`,
+};
+
+// In SegmentedPdfPage component, update the Document:
+<Document
+  file={cachedUrl}
+  loading={null}
+  error={null}
+  onLoadError={handleLoadError}
+  options={pdfOptions}  // ← Add this
+>
+Step 2: Update SecureReaderScreen.tsx
+
+// Create options constant (near the top, after pdfjs import)
+const pdfOptions = {
+  cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfjs.version}/cmaps/`,
+  cMapPacked: true,
+  standardFontDataUrl: `https://unpkg.com/pdfjs-dist@${pdfjs.version}/standard_fonts/`,
+};
+
+// In the legacy Document component:
+<Document
+  file={pdfSource}
+  onLoadSuccess={(loadedDoc) => onDocumentLoadSuccess({ numPages: loadedDoc.numPages }, loadedDoc)}
+  options={pdfOptions}  // ← Add this
+  loading={...}
+  error={...}
+>
+Why This Fixes Missing Images
+Some PDFs encode content in ways that require these resources:
+
+Character Maps (CMaps): PDFs can reference external character encoding maps. Without these, text may appear as blank spaces or the entire text layer may fail to render.
+
+Standard Fonts: PDFs can reference the 14 standard PDF fonts (Helvetica, Times, Courier, etc.) without embedding them. If the viewer can't load these fonts, text renders incorrectly or content that depends on font metrics breaks.
+
+Cascade Effect: When font/text rendering fails, it can sometimes affect the layout engine's understanding of where images should be placed, causing them to appear clipped or missing.
+
+Technical Notes
+CDN Choice
+Using unpkg.com to serve the PDF.js resources because:
+
+It's the same CDN used for the worker script
+Matches the exact version of pdfjs-dist installed
+No need to bundle these resources (saves ~3MB)
+Version Matching
+The options use pdfjs.version to ensure the CMaps and fonts match the exact PDF.js version, preventing compatibility issues.
+
+Performance
+These resources are loaded on-demand by PDF.js only when needed. Most simple PDFs won't request them at all.
+
+Summary of Changes
+File	Change
+src/components/reader/VirtualizedPdfViewer.tsx	Add pdfjs import, create pdfOptions constant, add options={pdfOptions} to Document
+src/pages/SecureReaderScreen.tsx	Create pdfOptions constant, add options={pdfOptions} to legacy Document
+This should resolve the missing images and content issue by providing PDF.js with the resources it needs to fully render complex PDFs.
