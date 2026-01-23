@@ -19,9 +19,10 @@ import { usePinchZoom } from '@/hooks/usePinchZoom';
 import { useReadingProgress } from '@/hooks/useReadingProgress';
 import { usePrivacyScreen } from '@/hooks/usePrivacyScreen';
 import { useScrollPageDetection } from '@/hooks/useScrollPageDetection';
-import { usePdfOutline } from '@/hooks/usePdfOutline';
+import { usePdfOutline, OutlineItem } from '@/hooks/usePdfOutline';
 import { useSignedUrlRefresh } from '@/hooks/useSignedUrlRefresh';
 import { useSegmentManager } from '@/hooks/useSegmentManager';
+import { ExtractedToc } from '@/lib/pdfTocExtractor';
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
@@ -70,6 +71,7 @@ export default function SecureReaderScreen() {
   const [isLegacyContent, setIsLegacyContent] = useState(false);
   const [isJumpingToPage, setIsJumpingToPage] = useState(false);
   const [jumpTargetPage, setJumpTargetPage] = useState<number | null>(null);
+  const [storedToc, setStoredToc] = useState<ExtractedToc | null>(null);
   
   // Store the PDF URL in a ref so refreshes don't trigger re-renders
   const pdfUrlRef = useRef<string | null>(null);
@@ -302,15 +304,21 @@ export default function SecureReaderScreen() {
           setIsLegacyContent(false);
           setLoadingProgress(50);
 
-          // Fetch content metadata (title, watermark info) directly
+          // Fetch content metadata (title, watermark info, TOC) directly
           const { data: contentData, error: contentError } = await supabase
             .from('content')
-            .select('title, total_pages')
+            .select('title, total_pages, table_of_contents')
             .eq('id', id)
             .single();
 
           if (contentError) {
             throw new Error('Failed to load content metadata');
+          }
+
+          // Use stored TOC if available
+          if (contentData.table_of_contents) {
+            console.log('[SecureReader] Using stored TOC from database');
+            setStoredToc(contentData.table_of_contents as unknown as ExtractedToc);
           }
 
           // Fetch profile for watermark
@@ -412,7 +420,12 @@ export default function SecureReaderScreen() {
     fetchCategory();
   }, [id]);
 
-  const { outline, hasOutline, loading: outlineLoading } = usePdfOutline(pdfDocument);
+  const { outline: clientOutline, hasOutline: clientHasOutline, loading: outlineLoading } = usePdfOutline(pdfDocument);
+
+  // Use stored TOC if available, otherwise fall back to client-extracted outline
+  const effectiveOutline: OutlineItem[] = storedToc?.items || clientOutline;
+  const effectiveHasOutline = storedToc ? storedToc.items.length > 0 : clientHasOutline;
+  const effectiveOutlineLoading = storedToc ? false : outlineLoading;
 
   // Auto-refresh signed URL before expiry - update refs only (no re-render)
   const handleUrlRefreshed = useCallback((newUrl: string, newExpiresAt: number) => {
@@ -609,11 +622,11 @@ export default function SecureReaderScreen() {
       <TableOfContents
         isOpen={showToc}
         onClose={() => setShowToc(false)}
-        outline={outline}
+        outline={effectiveOutline}
         currentPage={currentPage}
         onNavigate={goToPage}
-        hasOutline={hasOutline}
-        isLoading={outlineLoading}
+        hasOutline={effectiveHasOutline}
+        isLoading={effectiveOutlineLoading}
         category={contentCategory || undefined}
       />
 

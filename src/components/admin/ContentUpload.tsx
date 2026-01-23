@@ -11,6 +11,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { CoverUpload } from './CoverUpload';
 import { CONTENT_CATEGORIES, getCategoryConfig } from '@/lib/categories';
+import { extractTableOfContents } from '@/lib/pdfTocExtractor';
 
 interface ContentUploadProps {
   onSuccess: () => void;
@@ -156,17 +157,32 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
       setUploadProgress(5);
       const arrayBuffer = await selectedFile.arrayBuffer();
       
+      // Extract Table of Contents from full PDF before splitting
+      setUploadStatus('Extracting table of contents...');
+      setUploadProgress(8);
+      let tocData = null;
+      try {
+        tocData = await extractTableOfContents(arrayBuffer);
+        if (tocData) {
+          console.log(`[ContentUpload] Extracted TOC with ${tocData.items.length} items (${tocData.extractedFrom})`);
+        } else {
+          console.log('[ContentUpload] No TOC found in PDF');
+        }
+      } catch (tocError) {
+        console.warn('[ContentUpload] TOC extraction failed, continuing without:', tocError);
+      }
+      
       // Split into segments
       setUploadStatus('Splitting PDF into segments...');
-      setUploadProgress(10);
+      setUploadProgress(12);
       const segments = await splitPdfIntoSegments(arrayBuffer);
       const totalPages = segments.reduce((max, seg) => Math.max(max, seg.endPage), 0);
       
       console.log(`[ContentUpload] Split PDF into ${segments.length} segments, ${totalPages} total pages`);
 
-      // Create content record first to get the ID
+      // Create content record first to get the ID (with TOC)
       setUploadStatus('Creating content record...');
-      setUploadProgress(15);
+      setUploadProgress(18);
       
       const { data: contentData, error: insertError } = await supabase
         .from('content')
@@ -180,6 +196,7 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
           cover_url: coverUrl,
           category: category,
           total_pages: totalPages,
+          table_of_contents: tocData,
         })
         .select('id')
         .single();
@@ -192,7 +209,7 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
       console.log(`[ContentUpload] Created content record: ${contentId}`);
 
       // Upload each segment
-      const segmentUploadProgress = 80 / segments.length; // 80% for uploads (15-95%)
+      const segmentUploadProgress = 77 / segments.length; // 77% for uploads (18-95%)
       
       for (let i = 0; i < segments.length; i++) {
         const seg = segments[i];
@@ -221,7 +238,7 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
           throw new Error(`Failed to create segment record: ${segmentInsertError.message}`);
         }
 
-        setUploadProgress(15 + Math.round((i + 1) * segmentUploadProgress));
+        setUploadProgress(18 + Math.round((i + 1) * segmentUploadProgress));
       }
 
       setUploadStatus('Finalizing...');

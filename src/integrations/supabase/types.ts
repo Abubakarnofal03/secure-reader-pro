@@ -46,6 +46,7 @@ export type Database = {
           id: string
           is_active: boolean
           price: number
+          table_of_contents: Json | null
           title: string
           total_pages: number | null
           updated_at: string
@@ -60,6 +61,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           price?: number
+          table_of_contents?: Json | null
           title: string
           total_pages?: number | null
           updated_at?: string
@@ -74,6 +76,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           price?: number
+          table_of_contents?: Json | null
           title?: string
           total_pages?: number | null
           updated_at?: string
