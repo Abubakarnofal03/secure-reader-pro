@@ -3,6 +3,11 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { Document, Page } from 'react-pdf';
 import { Loader2, AlertTriangle } from 'lucide-react';
 import { useSegmentDocumentCache } from '@/hooks/useSegmentDocumentCache';
+import { PageSeparator } from './PageSeparator';
+
+// Import react-pdf layer styles for proper text/annotation rendering
+import 'react-pdf/dist/esm/Page/TextLayer.css';
+import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
 
 interface Segment {
   id: string;
@@ -31,6 +36,8 @@ interface VirtualizedPdfViewerProps {
   legacyMode?: boolean;
   // Callback to expose scroll API for external navigation control
   onReady?: (api: VirtualizedPdfViewerApi) => void;
+  // Total pages for page separator display
+  totalPages?: number;
 }
 
 // Segmented page component - renders a page from a specific segment
@@ -42,7 +49,9 @@ const SegmentedPdfPage = memo(({
   scaledWidth,
   estimatedHeight,
   registerPage,
+  totalPages,
   onLoadError,
+  onPageRendered,
 }: { 
   globalPageNumber: number;
   segment: { segment_index: number; start_page: number; end_page: number };
@@ -50,7 +59,9 @@ const SegmentedPdfPage = memo(({
   scaledWidth: number;
   estimatedHeight: number;
   registerPage: (pageNumber: number, element: HTMLDivElement | null) => void;
+  totalPages: number;
   onLoadError?: (segmentIndex: number) => void;
+  onPageRendered?: (pageNumber: number, height: number) => void;
 }) => {
   const pageRef = useRef<HTMLDivElement>(null);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -80,6 +91,11 @@ const SegmentedPdfPage = memo(({
     setLoadFailed(true);
     onLoadError?.(segment.segment_index);
   }, [segment.segment_index, onLoadError]);
+
+  // Handle successful render
+  const handleRenderSuccess = useCallback((page: { height: number }) => {
+    onPageRendered?.(globalPageNumber, page.height);
+  }, [globalPageNumber, onPageRendered]);
 
   // Show loading while waiting for URL
   if (!cachedUrl) {
@@ -124,7 +140,7 @@ const SegmentedPdfPage = memo(({
     <div
       data-page={globalPageNumber}
       ref={pageRef}
-      className="flex justify-center"
+      className="flex flex-col items-center"
       style={{ width: scaledWidth }}
     >
       <Document
@@ -136,9 +152,10 @@ const SegmentedPdfPage = memo(({
         <Page
           pageNumber={localPageNumber}
           width={scaledWidth}
-          renderTextLayer={false}
-          renderAnnotationLayer={false}
-          className="shadow-[var(--shadow-lg)] rounded-sm"
+          renderTextLayer={true}
+          renderAnnotationLayer={true}
+          className="shadow-[var(--shadow-lg)] rounded-sm pdf-page-secure"
+          onRenderSuccess={handleRenderSuccess}
           loading={
             <div 
               className="flex items-center justify-center bg-muted/30 rounded-sm"
@@ -158,6 +175,8 @@ const SegmentedPdfPage = memo(({
           }
         />
       </Document>
+      {/* Page separator */}
+      <PageSeparator pageNumber={globalPageNumber} totalPages={totalPages} />
     </div>
   );
 }, (prevProps, nextProps) => {
@@ -167,6 +186,7 @@ const SegmentedPdfPage = memo(({
          prevProps.scaledWidth === nextProps.scaledWidth &&
          prevProps.estimatedHeight === nextProps.estimatedHeight &&
          prevProps.cachedUrl === nextProps.cachedUrl &&
+         prevProps.totalPages === nextProps.totalPages &&
          prevProps.segment.segment_index === nextProps.segment.segment_index;
 });
 
@@ -178,11 +198,15 @@ const LegacyPdfPage = memo(({
   scaledWidth,
   estimatedHeight,
   registerPage,
+  totalPages,
+  onPageRendered,
 }: { 
   pageNumber: number; 
   scaledWidth: number;
   estimatedHeight: number;
   registerPage: (pageNumber: number, element: HTMLDivElement | null) => void;
+  totalPages: number;
+  onPageRendered?: (pageNumber: number, height: number) => void;
 }) => {
   const pageRef = useRef<HTMLDivElement>(null);
 
@@ -196,19 +220,25 @@ const LegacyPdfPage = memo(({
     };
   }, [pageNumber, registerPage]);
 
+  // Handle successful render
+  const handleRenderSuccess = useCallback((page: { height: number }) => {
+    onPageRendered?.(pageNumber, page.height);
+  }, [pageNumber, onPageRendered]);
+
   return (
     <div
       data-page={pageNumber}
       ref={pageRef}
-      className="flex justify-center"
+      className="flex flex-col items-center"
       style={{ width: scaledWidth }}
     >
       <Page
         pageNumber={pageNumber}
         width={scaledWidth}
-        renderTextLayer={false}
-        renderAnnotationLayer={false}
-        className="shadow-[var(--shadow-lg)] rounded-sm"
+        renderTextLayer={true}
+        renderAnnotationLayer={true}
+        className="shadow-[var(--shadow-lg)] rounded-sm pdf-page-secure"
+        onRenderSuccess={handleRenderSuccess}
         loading={
           <div 
             className="flex items-center justify-center bg-muted/30 rounded-sm"
@@ -226,12 +256,15 @@ const LegacyPdfPage = memo(({
           </div>
         }
       />
+      {/* Page separator */}
+      <PageSeparator pageNumber={pageNumber} totalPages={totalPages} />
     </div>
   );
 }, (prevProps, nextProps) => {
   return prevProps.pageNumber === nextProps.pageNumber && 
          prevProps.scaledWidth === nextProps.scaledWidth &&
-         prevProps.estimatedHeight === nextProps.estimatedHeight;
+         prevProps.estimatedHeight === nextProps.estimatedHeight &&
+         prevProps.totalPages === nextProps.totalPages;
 });
 
 LegacyPdfPage.displayName = 'LegacyPdfPage';
@@ -380,6 +413,7 @@ export function VirtualizedPdfViewer({
                 scaledWidth={scaledWidth}
                 estimatedHeight={scaledHeight}
                 registerPage={stableRegisterPage}
+                totalPages={numPages}
                 onLoadError={handleSegmentLoadError}
               />
             </div>
@@ -402,6 +436,7 @@ export function VirtualizedPdfViewer({
               scaledWidth={scaledWidth}
               estimatedHeight={scaledHeight}
               registerPage={stableRegisterPage}
+              totalPages={numPages}
             />
           </div>
         );

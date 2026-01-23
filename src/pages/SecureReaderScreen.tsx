@@ -117,9 +117,9 @@ export default function SecureReaderScreen() {
     totalPages: numPages,
   });
 
-  // Simple button-based zoom (browser-like CSS transform)
+  // Width-based zoom - pages re-render at different widths for crisp text
   const { 
-    scale, 
+    zoomLevel, 
     zoomIn, 
     zoomOut, 
     resetZoom,
@@ -129,7 +129,8 @@ export default function SecureReaderScreen() {
     maxScale: 2,
   });
 
-  const pageWidth = baseWidth;
+  // Calculate page width based on zoom level (native approach - no CSS transforms)
+  const pageWidth = Math.round(baseWidth * zoomLevel);
 
   useEffect(() => {
     if (!isProgressLoading && savedProgress && !hasInitializedPage && numPages > 0) {
@@ -660,7 +661,7 @@ export default function SecureReaderScreen() {
           <div className="flex items-center gap-1 bg-muted/50 rounded-xl p-1">
             <button
               onClick={zoomOut}
-              disabled={scale <= 1}
+              disabled={zoomLevel <= 1}
               className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-card disabled:opacity-30 transition-all"
               title="Zoom out"
             >
@@ -671,11 +672,11 @@ export default function SecureReaderScreen() {
               className="px-2 py-1 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors min-w-[3rem] rounded-lg hover:bg-card"
               title="Reset zoom"
             >
-              {Math.round(scale * 100)}%
+              {Math.round(zoomLevel * 100)}%
             </button>
             <button
               onClick={zoomIn}
-              disabled={scale >= 2}
+              disabled={zoomLevel >= 2}
               className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-card disabled:opacity-30 transition-all"
               title="Zoom in"
             >
@@ -707,25 +708,15 @@ export default function SecureReaderScreen() {
             overscrollBehavior: 'none',
           }}
         >
-          {/* Outer wrapper sets the scrollable area size based on zoom */}
+          {/* Content wrapper - width adapts to zoomed page width */}
           <div
+            className="py-4"
             style={{
-              // When zoomed, this wrapper has the scaled dimensions for proper scrolling
-              width: isZoomed ? `${Math.round(pageWidth * scale) + 32}px` : '100%',
+              // When zoomed, allow horizontal scrolling
+              width: isZoomed ? `${pageWidth + 32}px` : '100%',
               minWidth: '100%',
-              // Height is handled by the content inside
             }}
           >
-            {/* Inner wrapper applies the CSS transform */}
-            <div
-              ref={pdfWrapperRef}
-              className="py-4"
-              style={{
-                // Apply CSS transform for browser-like zoom
-                transform: scale !== 1 ? `scale(${scale})` : undefined,
-                transformOrigin: 'top left',
-              }}
-            >
             {/* Segmented content: VirtualizedPdfViewer handles its own Documents */}
             {!isLegacyContent && isSegmented && numPages > 0 && id && (
               <VirtualizedPdfViewer
@@ -738,59 +729,58 @@ export default function SecureReaderScreen() {
                 getSegmentForPage={getSegmentForPage}
                 isLoadingSegment={isLoadingSegment}
                 legacyMode={false}
-                onReady={handleViewerReady}
-              />
-            )}
-            
-            {/* Loading segments state for segmented content */}
-            {!isLegacyContent && !isSegmented && content && isLoadingSegments && (
-              <div className="flex flex-col items-center justify-center py-20">
-                <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
-                <p className="text-sm text-muted-foreground">Loading segments...</p>
-              </div>
-            )}
-            
-            {/* Legacy content: wrap in a single Document */}
-            {isLegacyContent && pdfSource && (
-              <Document
-                file={pdfSource}
-                onLoadSuccess={(loadedDoc) => onDocumentLoadSuccess({ numPages: loadedDoc.numPages }, loadedDoc)}
-                loading={
-                  <div className="flex flex-col items-center justify-center py-20">
-                    <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
-                    <p className="text-sm text-muted-foreground">Loading document...</p>
-                  </div>
-                }
-                error={
-                  <div className="flex flex-col items-center justify-center py-20">
-                    <AlertTriangle className="h-8 w-8 text-destructive mb-3" />
-                    <p className="text-muted-foreground">Failed to load document</p>
-                    <p className="text-xs text-muted-foreground mt-1">The file may be corrupted</p>
-                  </div>
-                }
-              >
-                {numPages > 0 && id && (
-                  <VirtualizedPdfViewer
-                    numPages={numPages}
-                    pageWidth={pageWidth}
-                    registerPage={registerPage}
-                    scrollContainerRef={scrollContainerRef}
-                    legacyMode={true}
-                    onReady={handleViewerReady}
-                  />
-                )}
-              </Document>
-            )}
-            
-            {/* Loading state when content hasn't determined mode yet */}
-            {!content && (
-              <div className="flex flex-col items-center justify-center py-20">
-                <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
-                <p className="text-sm text-muted-foreground">Preparing content...</p>
-              </div>
-            )}
-          </div>
-          </div>
+              onReady={handleViewerReady}
+            />
+          )}
+          
+          {/* Loading segments state for segmented content */}
+          {!isLegacyContent && !isSegmented && content && isLoadingSegments && (
+            <div className="flex flex-col items-center justify-center py-20">
+              <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
+              <p className="text-sm text-muted-foreground">Loading segments...</p>
+            </div>
+          )}
+          
+          {/* Legacy content: wrap in a single Document */}
+          {isLegacyContent && pdfSource && (
+            <Document
+              file={pdfSource}
+              onLoadSuccess={(loadedDoc) => onDocumentLoadSuccess({ numPages: loadedDoc.numPages }, loadedDoc)}
+              loading={
+                <div className="flex flex-col items-center justify-center py-20">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
+                  <p className="text-sm text-muted-foreground">Loading document...</p>
+                </div>
+              }
+              error={
+                <div className="flex flex-col items-center justify-center py-20">
+                  <AlertTriangle className="h-8 w-8 text-destructive mb-3" />
+                  <p className="text-muted-foreground">Failed to load document</p>
+                  <p className="text-xs text-muted-foreground mt-1">The file may be corrupted</p>
+                </div>
+              }
+            >
+              {numPages > 0 && id && (
+                <VirtualizedPdfViewer
+                  numPages={numPages}
+                  pageWidth={pageWidth}
+                  registerPage={registerPage}
+                  scrollContainerRef={scrollContainerRef}
+                  legacyMode={true}
+                  onReady={handleViewerReady}
+                />
+              )}
+            </Document>
+          )}
+          
+          {/* Loading state when content hasn't determined mode yet */}
+          {!content && (
+            <div className="flex flex-col items-center justify-center py-20">
+              <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
+              <p className="text-sm text-muted-foreground">Preparing content...</p>
+            </div>
+          )}
+        </div>
         </div>
       </main>
     </div>
