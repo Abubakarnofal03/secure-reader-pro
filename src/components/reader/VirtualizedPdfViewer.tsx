@@ -6,8 +6,8 @@ import { useSegmentDocumentCache } from '@/hooks/useSegmentDocumentCache';
 import { PageSeparator } from './PageSeparator';
 
 // Import react-pdf layer styles for proper text/annotation rendering
-import 'react-pdf/dist/esm/Page/TextLayer.css';
-import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
+import 'react-pdf/dist/Page/TextLayer.css';
+import 'react-pdf/dist/Page/AnnotationLayer.css';
 
 interface Segment {
   id: string;
