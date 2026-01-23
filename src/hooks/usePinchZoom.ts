@@ -5,27 +5,32 @@ interface UsePinchZoomOptions {
   maxScale?: number;
 }
 
+/**
+ * Hook for controlling zoom level in the PDF reader.
+ * Uses width-based zoom (re-renders pages at different sizes) instead of CSS transforms.
+ * This ensures the virtualizer works correctly and text stays crisp.
+ */
 export function usePinchZoom({
   minScale = 1,
   maxScale = 2,
 }: UsePinchZoomOptions = {}) {
-  const [scale, setScale] = useState(1);
+  const [zoomLevel, setZoomLevel] = useState(1);
 
   const zoomIn = useCallback(() => {
-    setScale(prev => Math.min(maxScale, Math.round((prev + 0.25) * 100) / 100));
+    setZoomLevel(prev => Math.min(maxScale, Math.round((prev + 0.25) * 100) / 100));
   }, [maxScale]);
 
   const zoomOut = useCallback(() => {
-    setScale(prev => Math.max(minScale, Math.round((prev - 0.25) * 100) / 100));
+    setZoomLevel(prev => Math.max(minScale, Math.round((prev - 0.25) * 100) / 100));
   }, [minScale]);
 
-  const resetZoom = useCallback(() => setScale(1), []);
+  const resetZoom = useCallback(() => setZoomLevel(1), []);
 
   return {
-    scale,
+    zoomLevel,
     zoomIn,
     zoomOut,
     resetZoom,
-    isZoomed: scale > 1,
+    isZoomed: zoomLevel > 1,
   };
 }
