@@ -117,21 +117,16 @@ export default function SecureReaderScreen() {
     totalPages: numPages,
   });
 
-  // Hybrid pinch zoom - gesture for instant feedback, commit for crisp render
-  // Use contentRef for touch detection (not scroll container) to avoid conflicts
+  // Simple button-based zoom (browser-like CSS transform)
   const { 
     scale, 
-    visualScale,
-    gestureTransform,
-    isGesturing,
     zoomIn, 
     zoomOut, 
     resetZoom,
+    isZoomed,
   } = usePinchZoom({
     minScale: 1,
     maxScale: 2,
-    containerRef: contentRef as React.RefObject<HTMLElement>,
-    scrollContainerRef: scrollContainerRef as React.RefObject<HTMLElement>,
   });
 
   const pageWidth = baseWidth;
@@ -676,7 +671,7 @@ export default function SecureReaderScreen() {
               className="px-2 py-1 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors min-w-[3rem] rounded-lg hover:bg-card"
               title="Reset zoom"
             >
-              {Math.round(visualScale * 100)}%
+              {Math.round(scale * 100)}%
             </button>
             <button
               onClick={zoomIn}
@@ -693,11 +688,7 @@ export default function SecureReaderScreen() {
       {/* PDF Viewer */}
       <main 
         ref={contentRef}
-        className="relative flex-1 overflow-hidden"
-        style={{
-          // Disable browser gestures during pinch to prevent page refresh
-          touchAction: isGesturing ? 'none' : 'pan-y pinch-zoom',
-        }}
+        className="relative flex-1"
       >
         <Watermark sessionId={sessionId} />
         
@@ -718,11 +709,15 @@ export default function SecureReaderScreen() {
         >
           <div
             ref={pdfWrapperRef}
-            className="py-4 min-h-full"
+            className="py-4"
             style={{
-              // Set explicit width for horizontal scrolling when zoomed
-              width: scale > 1 ? `${Math.round(pageWidth * scale) + 32}px` : '100%',
+              // Apply CSS transform for browser-like zoom
+              transform: scale !== 1 ? `scale(${scale})` : undefined,
+              transformOrigin: 'top left',
+              // Set explicit dimensions for zoomed content to enable 2D scrolling
+              width: isZoomed ? `${Math.round(pageWidth * scale) + 32}px` : '100%',
               minWidth: '100%',
+              minHeight: isZoomed ? `${100 * scale}%` : undefined,
             }}
           >
             {/* Segmented content: VirtualizedPdfViewer handles its own Documents */}
@@ -730,10 +725,8 @@ export default function SecureReaderScreen() {
               <VirtualizedPdfViewer
                 numPages={numPages}
                 pageWidth={pageWidth}
-                scale={scale}
                 registerPage={registerPage}
                 scrollContainerRef={scrollContainerRef}
-                gestureTransform={gestureTransform}
                 segments={segments}
                 getSegmentUrl={getSegmentUrl}
                 getSegmentForPage={getSegmentForPage}
@@ -774,10 +767,8 @@ export default function SecureReaderScreen() {
                   <VirtualizedPdfViewer
                     numPages={numPages}
                     pageWidth={pageWidth}
-                    scale={scale}
                     registerPage={registerPage}
                     scrollContainerRef={scrollContainerRef}
-                    gestureTransform={gestureTransform}
                     legacyMode={true}
                     onReady={handleViewerReady}
                   />

@@ -20,11 +20,9 @@ export interface VirtualizedPdfViewerApi {
 interface VirtualizedPdfViewerProps {
   numPages: number;
   pageWidth: number;
-  scale: number;
   registerPage: (pageNumber: number, element: HTMLDivElement | null) => void;
   scrollContainerRef: RefObject<HTMLDivElement>;
-  gestureTransform?: string;
-  // New segment-related props
+  // Segment-related props
   segments?: Segment[];
   getSegmentUrl?: (segmentIndex: number) => string | null;
   getSegmentForPage?: (pageNumber: number) => Segment | null;
@@ -241,10 +239,8 @@ LegacyPdfPage.displayName = 'LegacyPdfPage';
 export function VirtualizedPdfViewer({
   numPages,
   pageWidth,
-  scale,
   registerPage,
   scrollContainerRef,
-  gestureTransform,
   segments,
   getSegmentUrl,
   getSegmentForPage,
@@ -257,8 +253,8 @@ export function VirtualizedPdfViewer({
   // Document cache to prevent constant re-downloads when URLs refresh
   const { getStableUrl, markFailed } = useSegmentDocumentCache();
 
-  // Calculate scaled dimensions
-  const scaledWidth = Math.round(pageWidth * scale);
+  // Pages always render at base width (1:1 scale) - parent handles zoom via CSS transform
+  const scaledWidth = pageWidth;
   const scaledHeight = Math.round(scaledWidth * 1.4); // Maintain aspect ratio
   
   // Gap between pages
@@ -331,25 +327,20 @@ export function VirtualizedPdfViewer({
         height: virtualizer.getTotalSize(),
         width: scaledWidth,
         margin: '0 auto',
-        // Apply gesture transform for instant visual feedback during pinch
-        transform: gestureTransform,
-        transformOrigin: 'center top',
-        // Smooth transition only when NOT gesturing (on commit)
-        transition: gestureTransform ? 'none' : 'transform 0.15s ease-out',
       }}
     >
       {virtualItems.map((virtualItem) => {
-        const globalPageNumber = virtualItem.index + 1;
+        const pageNumber = virtualItem.index + 1;
         
         // Segmented mode: each page gets its own Document
         if (isSegmentedMode) {
-          const segment = getSegmentForPage!(globalPageNumber);
+          const segment = getSegmentForPage!(pageNumber);
           
           if (!segment) {
             // Page not found in any segment - show error
             return (
               <div
-                key={`page-${globalPageNumber}-${scale}`}
+                key={`page-${pageNumber}`}
                 data-index={virtualItem.index}
                 className="absolute top-0 left-0"
                 style={{
@@ -374,7 +365,7 @@ export function VirtualizedPdfViewer({
           
           return (
             <div
-              key={`page-${globalPageNumber}-seg${segment.segment_index}-${scale}`}
+              key={`page-${pageNumber}-seg${segment.segment_index}`}
               data-index={virtualItem.index}
               className="absolute top-0 left-0"
               style={{
@@ -383,7 +374,7 @@ export function VirtualizedPdfViewer({
               }}
             >
               <SegmentedPdfPage
-                globalPageNumber={globalPageNumber}
+                globalPageNumber={pageNumber}
                 segment={segment}
                 cachedUrl={cachedUrl}
                 scaledWidth={scaledWidth}
@@ -398,7 +389,7 @@ export function VirtualizedPdfViewer({
         // Legacy mode: pages rendered from parent Document context
         return (
           <div
-            key={`page-${globalPageNumber}-${scale}`}
+            key={`page-${pageNumber}`}
             data-index={virtualItem.index}
             className="absolute top-0 left-0"
             style={{
@@ -407,7 +398,7 @@ export function VirtualizedPdfViewer({
             }}
           >
             <LegacyPdfPage
-              pageNumber={globalPageNumber}
+              pageNumber={pageNumber}
               scaledWidth={scaledWidth}
               estimatedHeight={scaledHeight}
               registerPage={stableRegisterPage}
