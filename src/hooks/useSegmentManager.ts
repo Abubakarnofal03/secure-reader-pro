@@ -29,6 +29,7 @@ interface UseSegmentManagerResult {
   isLoadingSegment: boolean;
   getSegmentForPage: (pageNumber: number) => Segment | null;
   getSegmentUrl: (segmentIndex: number) => string | null;
+  prefetchSegmentForPage: (pageNumber: number) => Promise<string | null>;
   totalPages: number;
   error: string | null;
   isSegmented: boolean;
@@ -204,6 +205,21 @@ export function useSegmentManager({
     }
   }, [activeSegment, enabled, fetchSegmentUrl]);
 
+  // Prefetch segment for a specific page (used for jump-to-page navigation)
+  const prefetchSegmentForPage = useCallback(async (pageNumber: number): Promise<string | null> => {
+    const segment = getSegmentForPage(pageNumber);
+    if (!segment) return null;
+    
+    // Check if already cached and valid
+    const cached = urlCache.current.get(segment.segment_index);
+    if (cached && cached.expiresAt > Date.now() + REFRESH_THRESHOLD_MS) {
+      return cached.signedUrl;
+    }
+    
+    // Fetch the segment URL
+    return fetchSegmentUrl(segment);
+  }, [getSegmentForPage, fetchSegmentUrl]);
+
   // Prefetch adjacent segments for smooth scrolling
   useEffect(() => {
     if (!enabled || segments.length === 0) return;
@@ -252,6 +268,7 @@ export function useSegmentManager({
     isLoadingSegment,
     getSegmentForPage,
     getSegmentUrl,
+    prefetchSegmentForPage,
     totalPages,
     error,
     isSegmented,
