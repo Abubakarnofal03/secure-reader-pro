@@ -294,9 +294,10 @@ export function VirtualizedPdfViewer({
   // Document cache to prevent constant re-downloads when URLs refresh
   const { getStableUrl, markFailed } = useSegmentDocumentCache();
 
-  // Pages always render at base width (1:1 scale) - parent handles zoom via CSS transform
+  // Pages render at the given width (native zoom via width). Height varies per PDF page.
   const scaledWidth = pageWidth;
-  const scaledHeight = Math.round(scaledWidth * 1.4); // Maintain aspect ratio
+  // Conservative starting estimate; we will MEASURE actual heights after render.
+  const scaledHeight = Math.round(scaledWidth * 1.4);
   
   // Gap between pages
   const pageGap = 16;
@@ -327,6 +328,8 @@ export function VirtualizedPdfViewer({
     count: numPages,
     getScrollElement: () => scrollContainerRef.current,
     estimateSize: () => estimatedPageHeight,
+    // Measure real rendered heights so pages never overlap/crop when zoom changes.
+    measureElement: (el) => el.getBoundingClientRect().height,
     // Higher overscan for smoother fast scrolling
     overscan: 5,
     paddingStart: 16,
@@ -411,6 +414,7 @@ export function VirtualizedPdfViewer({
               key={`page-${pageNumber}-seg${segment.segment_index}`}
               data-index={virtualItem.index}
               className="absolute top-0 left-0"
+                ref={virtualizer.measureElement}
               style={{
                 transform: `translateY(${virtualItem.start}px)`,
                 width: scaledWidth,
@@ -436,6 +440,7 @@ export function VirtualizedPdfViewer({
             key={`page-${pageNumber}`}
             data-index={virtualItem.index}
             className="absolute top-0 left-0"
+            ref={virtualizer.measureElement}
             style={{
               transform: `translateY(${virtualItem.start}px)`,
               width: scaledWidth,
