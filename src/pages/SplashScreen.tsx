@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 
 export default function SplashScreen() {
   const navigate = useNavigate();
   const { user, profile, loading } = useAuth();
-  const [animationPhase, setAnimationPhase] = useState<'closed' | 'opening' | 'open'>('closed');
+  const [animationPhase, setAnimationPhase] = useState<'closed' | 'opening' | 'open' | 'zooming' | 'fading'>('closed');
   const [showSplash, setShowSplash] = useState(true);
 
   useEffect(() => {
@@ -18,16 +18,28 @@ export default function SplashScreen() {
     // Book fully open
     const fullyOpenTimer = setTimeout(() => {
       setAnimationPhase('open');
-    }, 1200);
+    }, 1000);
+
+    // Start zoom in effect
+    const zoomTimer = setTimeout(() => {
+      setAnimationPhase('zooming');
+    }, 1800);
+
+    // Start fade out
+    const fadeTimer = setTimeout(() => {
+      setAnimationPhase('fading');
+    }, 2400);
 
     // End splash
     const endTimer = setTimeout(() => {
       setShowSplash(false);
-    }, 2200);
+    }, 2800);
 
     return () => {
       clearTimeout(openTimer);
       clearTimeout(fullyOpenTimer);
+      clearTimeout(zoomTimer);
+      clearTimeout(fadeTimer);
       clearTimeout(endTimer);
     };
   }, []);
@@ -46,8 +58,16 @@ export default function SplashScreen() {
     }
   }, [showSplash, loading, user, profile, navigate]);
 
+  const isZoomingOrFading = animationPhase === 'zooming' || animationPhase === 'fading';
+
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-primary safe-top safe-bottom overflow-hidden">
+    <motion.div 
+      className="fixed inset-0 flex flex-col items-center justify-center bg-primary safe-top safe-bottom overflow-hidden z-50"
+      animate={{
+        opacity: animationPhase === 'fading' ? 0 : 1,
+      }}
+      transition={{ duration: 0.4, ease: 'easeOut' }}
+    >
       {/* Background pattern - subtle book texture */}
       <div className="absolute inset-0 opacity-5">
         <div className="absolute inset-0" style={{
@@ -61,11 +81,24 @@ export default function SplashScreen() {
         }} />
       </div>
 
-      <div className="relative flex flex-col items-center">
+      <motion.div 
+        className="relative flex flex-col items-center"
+        animate={{
+          scale: isZoomingOrFading ? 15 : 1,
+          y: isZoomingOrFading ? 0 : 0,
+        }}
+        transition={{ 
+          duration: 0.6, 
+          ease: [0.4, 0, 0.2, 1]
+        }}
+      >
         {/* Book Animation Container */}
         <motion.div
           initial={{ scale: 0.8, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
+          animate={{ 
+            scale: 1, 
+            opacity: isZoomingOrFading ? 0 : 1 
+          }}
           transition={{ duration: 0.4, ease: 'easeOut' }}
           className="relative w-40 h-52 perspective-1000"
           style={{ perspective: '1000px' }}
@@ -86,30 +119,28 @@ export default function SplashScreen() {
           </div>
 
           {/* Pages (visible when opening) */}
-          <AnimatePresence>
-            {animationPhase !== 'closed' && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="absolute inset-y-1 left-1/2 right-1 bg-gradient-to-r from-amber-50/90 to-amber-100/80 rounded-r"
-                style={{ marginLeft: '8px' }}
-              >
-                {/* Page lines */}
-                <div className="absolute inset-3 flex flex-col justify-center gap-1.5">
-                  {[...Array(8)].map((_, i) => (
-                    <motion.div
-                      key={i}
-                      initial={{ scaleX: 0, opacity: 0 }}
-                      animate={{ scaleX: 1, opacity: 0.3 }}
-                      transition={{ delay: 0.8 + i * 0.05, duration: 0.3 }}
-                      className="h-0.5 bg-amber-900/30 rounded origin-left"
-                      style={{ width: `${70 + Math.random() * 25}%` }}
-                    />
-                  ))}
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+          {animationPhase !== 'closed' && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="absolute inset-y-1 left-1/2 right-1 bg-gradient-to-r from-amber-50/90 to-amber-100/80 rounded-r"
+              style={{ marginLeft: '8px' }}
+            >
+              {/* Page lines */}
+              <div className="absolute inset-3 flex flex-col justify-center gap-1.5">
+                {[...Array(8)].map((_, i) => (
+                  <motion.div
+                    key={i}
+                    initial={{ scaleX: 0, opacity: 0 }}
+                    animate={{ scaleX: 1, opacity: 0.3 }}
+                    transition={{ delay: 0.6 + i * 0.05, duration: 0.3 }}
+                    className="h-0.5 bg-amber-900/30 rounded origin-left"
+                    style={{ width: `${70 + Math.random() * 25}%` }}
+                  />
+                ))}
+              </div>
+            </motion.div>
+          )}
 
           {/* Front Cover - Opens like a book */}
           <motion.div
@@ -123,7 +154,7 @@ export default function SplashScreen() {
               rotateY: animationPhase === 'closed' ? 0 : animationPhase === 'opening' ? -120 : -150,
             }}
             transition={{ 
-              duration: animationPhase === 'opening' ? 0.8 : 0.4, 
+              duration: animationPhase === 'opening' ? 0.7 : 0.3, 
               ease: 'easeInOut' 
             }}
           >
@@ -137,7 +168,7 @@ export default function SplashScreen() {
                 transition={{ delay: 0.2, duration: 0.5 }}
               />
               
-              {/* Book icon/emblem */}
+              {/* Medical caduceus icon */}
               <motion.div
                 initial={{ opacity: 0, scale: 0.5 }}
                 animate={{ opacity: 1, scale: 1 }}
@@ -151,7 +182,9 @@ export default function SplashScreen() {
                   stroke="currentColor"
                   strokeWidth="1.5"
                 >
-                  <path d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                  <path d="M12 2v20M12 2c-2 2-4 3-6 3 2 0 4 1 6 3-2-2-4-3-6-3 2 0 4-1 6-3z" />
+                  <path d="M12 8c2-2 4-3 6-3-2 0-4 1-6 3 2 2 4 3 6 3-2 0-4-1-6-3z" />
+                  <circle cx="12" cy="6" r="2" />
                 </svg>
               </motion.div>
 
@@ -173,7 +206,7 @@ export default function SplashScreen() {
             opacity: animationPhase === 'open' ? 1 : 0, 
             y: animationPhase === 'open' ? 0 : 20 
           }}
-          transition={{ duration: 0.5, delay: 0.2 }}
+          transition={{ duration: 0.4, delay: 0.1 }}
           className="mt-8 text-center"
         >
           <h1 className="font-display text-2xl font-semibold text-primary-foreground tracking-wide">
@@ -188,7 +221,7 @@ export default function SplashScreen() {
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: animationPhase === 'open' ? 1 : 0 }}
-          transition={{ delay: 0.5, duration: 0.4 }}
+          transition={{ delay: 0.3, duration: 0.3 }}
           className="mt-8"
         >
           <div className="flex gap-1.5">
@@ -209,7 +242,17 @@ export default function SplashScreen() {
             ))}
           </div>
         </motion.div>
-      </div>
-    </div>
+      </motion.div>
+
+      {/* White overlay that fades in during zoom */}
+      <motion.div
+        className="absolute inset-0 bg-background pointer-events-none"
+        initial={{ opacity: 0 }}
+        animate={{ 
+          opacity: animationPhase === 'zooming' ? 0.5 : animationPhase === 'fading' ? 1 : 0 
+        }}
+        transition={{ duration: 0.4 }}
+      />
+    </motion.div>
   );
 }
