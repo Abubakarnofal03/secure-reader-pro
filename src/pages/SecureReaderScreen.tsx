@@ -125,6 +125,7 @@ export default function SecureReaderScreen() {
   });
 
   // Width-based zoom - pages re-render at different widths for crisp text
+  // Pass scrollContainerRef to preserve scroll position during zoom
   const { 
     zoomLevel, 
     zoomIn, 
@@ -134,6 +135,7 @@ export default function SecureReaderScreen() {
   } = usePinchZoom({
     minScale: 1,
     maxScale: 2,
+    scrollContainerRef,
   });
 
   // Calculate page width based on zoom level (native approach - no CSS transforms)
@@ -711,17 +713,19 @@ export default function SecureReaderScreen() {
           className="h-full overflow-x-auto overflow-y-auto overscroll-none"
           style={{
             WebkitOverflowScrolling: 'touch',
-            // Let browser handle all touch gestures naturally
-            touchAction: 'auto',
+            // Disable native zoom - use button-based zoom only
+            touchAction: 'pan-x pan-y',
           }}
         >
-          {/* Content wrapper - width adapts to zoomed page width */}
+          {/* Content wrapper - width adapts to zoomed page width with proper padding */}
           <div
-            className="py-4"
+            className="py-4 flex justify-center"
             style={{
-              // When zoomed, allow horizontal scrolling
-              width: isZoomed ? `${pageWidth + 32}px` : '100%',
+              // Ensure content is never clipped - add padding for zoomed content
+              width: 'fit-content',
               minWidth: '100%',
+              paddingLeft: isZoomed ? '16px' : '0',
+              paddingRight: isZoomed ? '16px' : '0',
             }}
           >
             {/* Segmented content: VirtualizedPdfViewer handles its own Documents */}

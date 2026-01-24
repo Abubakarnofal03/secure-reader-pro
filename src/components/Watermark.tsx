@@ -37,7 +37,7 @@ export function Watermark({ className = '', sessionId }: WatermarkProps) {
       className={`watermark-overlay absolute inset-0 overflow-hidden pointer-events-none select-none ${className}`}
       style={{ 
         zIndex: 100,
-        touchAction: 'auto',
+        touchAction: 'none',
         WebkitTouchCallout: 'none',
         WebkitUserSelect: 'none',
         userSelect: 'none',
