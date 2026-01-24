@@ -1,14 +1,17 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { User, LogOut, ChevronRight, Shield, Mail, Crown, BookOpen, Moon, Sun } from 'lucide-react';
+import { User, LogOut, ChevronRight, Shield, Mail, Crown, BookOpen, Moon, Sun, ScrollText } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { useTheme } from 'next-themes';
+import { TermsAndConditionsDialog } from '@/components/TermsAndConditionsDialog';
 
 export default function ProfileScreen() {
   const { profile, signOut } = useAuth();
   const navigate = useNavigate();
   const { theme, setTheme } = useTheme();
+  const [showTerms, setShowTerms] = useState(false);
 
   const handleSignOut = async () => {
     await signOut();
@@ -98,27 +101,50 @@ export default function ProfileScreen() {
             </div>
           </div>
 
-          {/* Theme Toggle */}
+          {/* Settings Section */}
           <div className="rounded-2xl border border-border/80 bg-card shadow-[var(--shadow-md)]">
-            <button
-              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-              className="flex w-full items-center justify-between px-5 py-4"
-            >
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-secondary">
-                  {theme === 'dark' ? (
-                    <Moon className="h-5 w-5 text-muted-foreground" />
-                  ) : (
-                    <Sun className="h-5 w-5 text-muted-foreground" />
-                  )}
+            <div className="px-5 py-4 border-b border-border/50">
+              <h3 className="font-display text-lg font-semibold">Settings</h3>
+            </div>
+            <div className="divide-y divide-border/50">
+              {/* Theme Toggle */}
+              <button
+                onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                className="flex w-full items-center justify-between px-5 py-4 hover:bg-secondary/50 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-secondary">
+                    {theme === 'dark' ? (
+                      <Moon className="h-5 w-5 text-muted-foreground" />
+                    ) : (
+                      <Sun className="h-5 w-5 text-muted-foreground" />
+                    )}
+                  </div>
+                  <div className="text-left">
+                    <p className="text-sm font-medium">Appearance</p>
+                    <p className="text-xs text-muted-foreground">{theme === 'dark' ? 'AMOLED Dark' : 'Light Mode'}</p>
+                  </div>
                 </div>
-                <div className="text-left">
-                  <p className="text-sm font-medium">Appearance</p>
-                  <p className="text-xs text-muted-foreground">{theme === 'dark' ? 'AMOLED Dark' : 'Light Mode'}</p>
+                <ChevronRight className="h-5 w-5 text-muted-foreground" />
+              </button>
+
+              {/* Terms and Conditions */}
+              <button
+                onClick={() => setShowTerms(true)}
+                className="flex w-full items-center justify-between px-5 py-4 hover:bg-secondary/50 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-secondary">
+                    <ScrollText className="h-5 w-5 text-muted-foreground" />
+                  </div>
+                  <div className="text-left">
+                    <p className="text-sm font-medium">Terms & Conditions</p>
+                    <p className="text-xs text-muted-foreground">Read our policies</p>
+                  </div>
                 </div>
-              </div>
-              <ChevronRight className="h-5 w-5 text-muted-foreground" />
-            </button>
+                <ChevronRight className="h-5 w-5 text-muted-foreground" />
+              </button>
+            </div>
           </div>
 
           <Button
@@ -130,6 +156,14 @@ export default function ProfileScreen() {
           </Button>
         </motion.div>
       </main>
+
+      {/* Terms Dialog - View Only Mode */}
+      <TermsAndConditionsDialog
+        isOpen={showTerms}
+        viewOnly
+        onAccept={() => setShowTerms(false)}
+        onClose={() => setShowTerms(false)}
+      />
     </div>
   );
 }
