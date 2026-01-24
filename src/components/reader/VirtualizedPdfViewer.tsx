@@ -1,4 +1,4 @@
-import { useRef, useCallback, useEffect, useState, memo, RefObject } from 'react';
+import { useRef, useCallback, useEffect, useState, memo, RefObject, useMemo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { Loader2, AlertTriangle } from 'lucide-react';
@@ -294,14 +294,33 @@ export function VirtualizedPdfViewer({
   // Document cache to prevent constant re-downloads when URLs refresh
   const { getStableUrl, markFailed } = useSegmentDocumentCache();
 
-  // Pages render at the given width (native zoom via width). Height varies per PDF page.
+  // Cache for actual page heights (ratio relative to width) - keyed by page number
+  // Once a page renders, we store its height/width ratio to use as the fixed size
+  const pageRatiosRef = useRef<Map<number, number>>(new Map());
+
+  // Pages render at the given width (native zoom via width).
   const scaledWidth = pageWidth;
-  // Fixed A4 aspect ratio (1:1.414) - this is the MINIMUM height to prevent jitter
-  const fixedA4Height = Math.round(scaledWidth * 1.414);
+  // Default A4 ratio as fallback before actual measurement
+  const defaultRatio = 1.414;
   
   // Gap between pages (includes PageSeparator height ~40px)
   const pageGap = 56;
-  const fixedPageHeight = fixedA4Height + pageGap;
+
+  // Get the fixed height for a page - uses cached ratio or default
+  const getPageHeight = useCallback((pageNumber: number) => {
+    const ratio = pageRatiosRef.current.get(pageNumber) ?? defaultRatio;
+    return Math.round(scaledWidth * ratio);
+  }, [scaledWidth]);
+
+  // Callback when a page renders - cache its actual dimensions
+  const handlePageRendered = useCallback((pageNumber: number, renderedHeight: number) => {
+    // Calculate and store the ratio (height/width) for this page
+    const ratio = renderedHeight / scaledWidth;
+    // Only update if we don't have it yet (first render)
+    if (!pageRatiosRef.current.has(pageNumber)) {
+      pageRatiosRef.current.set(pageNumber, ratio);
+    }
+  }, [scaledWidth]);
 
   // Determine if we're in segmented mode
   const isSegmentedMode = !legacyMode && segments && segments.length > 0 && getSegmentUrl && getSegmentForPage;
@@ -324,11 +343,14 @@ export function VirtualizedPdfViewer({
     markFailed(segmentIndex);
   }, [markFailed]);
 
+  // Default height for initial estimate (A4 ratio as fallback)
+  const defaultPageHeight = Math.round(scaledWidth * defaultRatio) + pageGap;
+
   const virtualizer = useVirtualizer({
     count: numPages,
     getScrollElement: () => scrollContainerRef.current,
-    // Use fixed A4 height - no dynamic measurement to prevent jitter
-    estimateSize: () => fixedPageHeight,
+    // Use default estimate - pages have fixed heights based on their actual ratio
+    estimateSize: () => defaultPageHeight,
     // Higher overscan for smoother fast scrolling
     overscan: 5,
     paddingStart: 16,
@@ -382,6 +404,7 @@ export function VirtualizedPdfViewer({
           const segment = getSegmentForPage!(pageNumber);
           
           if (!segment) {
+            const pageHeight = getPageHeight(pageNumber);
             // Page not found in any segment - show error
             return (
               <div
@@ -391,12 +414,12 @@ export function VirtualizedPdfViewer({
                 style={{
                   transform: `translateY(${virtualItem.start}px)`,
                   width: scaledWidth,
-                  minHeight: fixedA4Height,
+                  minHeight: pageHeight,
                 }}
               >
                 <div 
                   className="flex items-center justify-center bg-destructive/10 rounded-sm"
-                  style={{ width: scaledWidth, height: fixedA4Height }}
+                  style={{ width: scaledWidth, height: pageHeight }}
                 >
                   <span className="text-xs text-destructive">Page not found</span>
                 </div>
@@ -408,6 +431,7 @@ export function VirtualizedPdfViewer({
           const freshUrl = getSegmentUrl!(segment.segment_index);
           // Get stable URL from cache - prevents re-downloads when URL refreshes
           const cachedUrl = getStableUrl(segment.segment_index, freshUrl);
+          const pageHeight = getPageHeight(pageNumber);
           
           return (
             <div
@@ -417,7 +441,7 @@ export function VirtualizedPdfViewer({
               style={{
                 transform: `translateY(${virtualItem.start}px)`,
                 width: scaledWidth,
-                minHeight: fixedA4Height,
+                minHeight: pageHeight,
               }}
             >
               <SegmentedPdfPage
@@ -425,16 +449,18 @@ export function VirtualizedPdfViewer({
                 segment={segment}
                 cachedUrl={cachedUrl}
                 scaledWidth={scaledWidth}
-                estimatedHeight={fixedA4Height}
+                estimatedHeight={pageHeight}
                 registerPage={stableRegisterPage}
                 totalPages={numPages}
                 onLoadError={handleSegmentLoadError}
+                onPageRendered={handlePageRendered}
               />
             </div>
           );
         }
         
         // Legacy mode: pages rendered from parent Document context
+        const pageHeight = getPageHeight(pageNumber);
         return (
           <div
             key={`page-${pageNumber}`}
@@ -443,15 +469,16 @@ export function VirtualizedPdfViewer({
             style={{
               transform: `translateY(${virtualItem.start}px)`,
               width: scaledWidth,
-              minHeight: fixedA4Height,
+              minHeight: pageHeight,
             }}
           >
             <LegacyPdfPage
               pageNumber={pageNumber}
               scaledWidth={scaledWidth}
-              estimatedHeight={fixedA4Height}
+              estimatedHeight={pageHeight}
               registerPage={stableRegisterPage}
               totalPages={numPages}
+              onPageRendered={handlePageRendered}
             />
           </div>
         );
