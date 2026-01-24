@@ -1,9 +1,12 @@
-import { useCallback, useState, RefObject } from 'react';
+import { useCallback, useState, useRef, useEffect } from 'react';
 
 interface UsePinchZoomOptions {
   minScale?: number;
   maxScale?: number;
-  scrollContainerRef?: RefObject<HTMLElement>;
+  /** Current page number to restore after zoom */
+  currentPage?: number;
+  /** Callback to scroll to a specific page after zoom */
+  onZoomChange?: (newZoom: number, pageToRestore: number) => void;
 }
 
 /**
@@ -11,76 +14,69 @@ interface UsePinchZoomOptions {
  * Uses width-based zoom (re-renders pages at different sizes) instead of CSS transforms.
  * This ensures the virtualizer works correctly and text stays crisp.
  * 
- * When scrollContainerRef is provided, zoom operations preserve scroll position
- * by adjusting scroll offset proportionally to the zoom change.
+ * After zoom, calls onZoomChange with the page to restore so the parent
+ * can use the virtualizer's scrollToIndex for accurate positioning.
  */
 export function usePinchZoom({
   minScale = 1,
   maxScale = 2,
-  scrollContainerRef,
+  currentPage = 1,
+  onZoomChange,
 }: UsePinchZoomOptions = {}) {
   const [zoomLevel, setZoomLevel] = useState(1);
-
-  // Zoom while preserving scroll position
-  const zoomWithScrollPreservation = useCallback((newZoomLevel: number, prevZoomLevel: number) => {
-    const container = scrollContainerRef?.current;
-    if (!container) return;
-
-    // Calculate scroll position ratio before zoom
-    const scrollTop = container.scrollTop;
-    const scrollHeight = container.scrollHeight - container.clientHeight;
-    const scrollRatio = scrollHeight > 0 ? scrollTop / scrollHeight : 0;
-    
-    // Calculate horizontal scroll ratio
-    const scrollLeft = container.scrollLeft;
-    const scrollWidth = container.scrollWidth - container.clientWidth;
-    const scrollRatioX = scrollWidth > 0 ? scrollLeft / scrollWidth : 0;
-
-    // Apply zoom after a small delay to let re-render happen
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        const newScrollHeight = container.scrollHeight - container.clientHeight;
-        const newScrollWidth = container.scrollWidth - container.clientWidth;
-        
-        // Restore scroll position proportionally
-        if (newScrollHeight > 0) {
-          container.scrollTop = scrollRatio * newScrollHeight;
-        }
-        if (newScrollWidth > 0) {
-          container.scrollLeft = scrollRatioX * newScrollWidth;
-        }
-      });
-    });
-  }, [scrollContainerRef]);
+  
+  // Track the page at zoom start so we can restore it after re-render
+  const pageAtZoomRef = useRef(currentPage);
+  
+  // Keep ref updated with current page
+  useEffect(() => {
+    pageAtZoomRef.current = currentPage;
+  }, [currentPage]);
 
   const zoomIn = useCallback(() => {
+    const pageToRestore = pageAtZoomRef.current;
     setZoomLevel(prev => {
       const next = Math.min(maxScale, Math.round((prev + 0.25) * 100) / 100);
       if (next !== prev) {
-        zoomWithScrollPreservation(next, prev);
+        // Notify parent to restore page after re-render
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            onZoomChange?.(next, pageToRestore);
+          });
+        });
       }
       return next;
     });
-  }, [maxScale, zoomWithScrollPreservation]);
+  }, [maxScale, onZoomChange]);
 
   const zoomOut = useCallback(() => {
+    const pageToRestore = pageAtZoomRef.current;
     setZoomLevel(prev => {
       const next = Math.max(minScale, Math.round((prev - 0.25) * 100) / 100);
       if (next !== prev) {
-        zoomWithScrollPreservation(next, prev);
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            onZoomChange?.(next, pageToRestore);
+          });
+        });
       }
       return next;
     });
-  }, [minScale, zoomWithScrollPreservation]);
+  }, [minScale, onZoomChange]);
 
   const resetZoom = useCallback(() => {
+    const pageToRestore = pageAtZoomRef.current;
     setZoomLevel(prev => {
       if (prev !== 1) {
-        zoomWithScrollPreservation(1, prev);
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            onZoomChange?.(1, pageToRestore);
+          });
+        });
       }
       return 1;
     });
-  }, [zoomWithScrollPreservation]);
+  }, [onZoomChange]);
 
   return {
     zoomLevel,
