@@ -7,7 +7,10 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { SessionInvalidatedDialog } from "@/components/SessionInvalidatedDialog";
 import { DeviceConflictDialog } from "@/components/DeviceConflictDialog";
+import { TermsAndConditionsDialog } from "@/components/TermsAndConditionsDialog";
+import { useTermsAcceptance } from "@/hooks/useTermsAcceptance";
 import { ThemeProvider } from "next-themes";
+import { LoadingScreen } from "@/components/LoadingScreen";
 
 import SplashScreen from "./pages/SplashScreen";
 import LoginScreen from "./pages/LoginScreen";
@@ -21,12 +24,30 @@ import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
-const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
+function AppContent() {
+  const { hasAcceptedTerms, isLoading, acceptTerms } = useTermsAcceptance();
+
+  const handleDeclineTerms = () => {
+    // Close the app or show blocked state
+    // On web, we can't really close the tab, so we show a blocked message
+    window.location.href = 'about:blank';
+  };
+
+  if (isLoading) {
+    return <LoadingScreen />;
+  }
+
+  return (
+    <>
+      {/* Terms dialog - blocks app usage until accepted */}
+      <TermsAndConditionsDialog
+        isOpen={!hasAcceptedTerms}
+        onAccept={acceptTerms}
+        onDecline={handleDeclineTerms}
+      />
+
+      {/* Only render app content if terms accepted */}
+      {hasAcceptedTerms && (
         <BrowserRouter>
           <AuthProvider>
             <SessionInvalidatedDialog />
@@ -64,6 +85,18 @@ const App = () => (
             </Routes>
           </AuthProvider>
         </BrowserRouter>
+      )}
+    </>
+  );
+}
+
+const App = () => (
+  <QueryClientProvider client={queryClient}>
+    <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <AppContent />
       </TooltipProvider>
     </ThemeProvider>
   </QueryClientProvider>
