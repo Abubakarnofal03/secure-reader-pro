@@ -363,11 +363,13 @@ export function VirtualizedPdfViewer({
 
   return (
     <div
-      className="relative"
+      className="relative mx-auto"
       style={{
         height: virtualizer.getTotalSize(),
+        // Use exact page width to prevent any cropping
         width: scaledWidth,
-        margin: '0 auto',
+        // Ensure centering when not zoomed
+        minWidth: scaledWidth,
       }}
     >
       {virtualItems.map((virtualItem) => {
