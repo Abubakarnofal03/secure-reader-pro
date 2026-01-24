@@ -1,8 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ScrollText, X, Check, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { ScrollArea } from '@/components/ui/scroll-area';
 
 interface TermsAndConditionsDialogProps {
   isOpen: boolean;
@@ -20,18 +19,25 @@ export function TermsAndConditionsDialog({
   onClose,
 }: TermsAndConditionsDialogProps) {
   const [hasScrolledToBottom, setHasScrolledToBottom] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (isOpen) {
       setHasScrolledToBottom(false);
+      // Reset scroll position when dialog opens
+      if (scrollRef.current) {
+        scrollRef.current.scrollTop = 0;
+      }
     }
   }, [isOpen]);
 
-  const handleScroll = (event: React.UIEvent<HTMLDivElement>) => {
-    const target = event.target as HTMLDivElement;
-    const isAtBottom = target.scrollHeight - target.scrollTop <= target.clientHeight + 50;
-    if (isAtBottom) {
-      setHasScrolledToBottom(true);
+  const handleScroll = () => {
+    if (scrollRef.current) {
+      const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
+      const isAtBottom = scrollHeight - scrollTop <= clientHeight + 50;
+      if (isAtBottom) {
+        setHasScrolledToBottom(true);
+      }
     }
   };
 
@@ -52,7 +58,7 @@ export function TermsAndConditionsDialog({
             className="relative w-full max-w-lg max-h-[90vh] bg-card rounded-2xl shadow-2xl border border-border/50 overflow-hidden flex flex-col"
           >
             {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-border/50 bg-gradient-to-r from-primary/5 to-transparent">
+            <div className="flex-shrink-0 flex items-center justify-between px-6 py-4 border-b border-border/50 bg-gradient-to-r from-primary/5 to-transparent">
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
                   <ScrollText className="h-5 w-5 text-primary" />
@@ -72,10 +78,12 @@ export function TermsAndConditionsDialog({
               )}
             </div>
 
-            {/* Content */}
-            <ScrollArea 
-              className="flex-1 px-6"
-              onScrollCapture={handleScroll}
+            {/* Content - Native scrollable div */}
+            <div 
+              ref={scrollRef}
+              onScroll={handleScroll}
+              className="flex-1 overflow-y-auto px-6 overscroll-contain"
+              style={{ minHeight: 0 }}
             >
               <div className="py-5 space-y-5 text-sm leading-relaxed font-body">
                 {/* Main Policy - Bold and prominent */}
@@ -218,7 +226,7 @@ export function TermsAndConditionsDialog({
 
                 <div className="pb-4" />
               </div>
-            </ScrollArea>
+            </div>
 
             {/* Footer */}
             <div className="px-6 py-4 border-t border-border/50 bg-gradient-to-r from-transparent to-primary/5">
