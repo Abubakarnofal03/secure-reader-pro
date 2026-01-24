@@ -711,8 +711,8 @@ export default function SecureReaderScreen() {
           className="h-full overflow-x-auto overflow-y-auto overscroll-none"
           style={{
             WebkitOverflowScrolling: 'touch',
-            // Enable pan/pinch gestures for zoomed scrolling
-            touchAction: 'pan-x pan-y pinch-zoom',
+            // Let browser handle all touch gestures naturally
+            touchAction: 'auto',
           }}
         >
           {/* Content wrapper - width adapts to zoomed page width */}
