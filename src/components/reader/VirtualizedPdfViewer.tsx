@@ -296,12 +296,12 @@ export function VirtualizedPdfViewer({
 
   // Pages render at the given width (native zoom via width). Height varies per PDF page.
   const scaledWidth = pageWidth;
-  // Conservative starting estimate; we will MEASURE actual heights after render.
-  const scaledHeight = Math.round(scaledWidth * 1.4);
+  // Fixed A4 aspect ratio (1:1.414) - this is the MINIMUM height to prevent jitter
+  const fixedA4Height = Math.round(scaledWidth * 1.414);
   
-  // Gap between pages
-  const pageGap = 16;
-  const estimatedPageHeight = scaledHeight + pageGap;
+  // Gap between pages (includes PageSeparator height ~40px)
+  const pageGap = 56;
+  const fixedPageHeight = fixedA4Height + pageGap;
 
   // Determine if we're in segmented mode
   const isSegmentedMode = !legacyMode && segments && segments.length > 0 && getSegmentUrl && getSegmentForPage;
@@ -327,9 +327,8 @@ export function VirtualizedPdfViewer({
   const virtualizer = useVirtualizer({
     count: numPages,
     getScrollElement: () => scrollContainerRef.current,
-    estimateSize: () => estimatedPageHeight,
-    // Measure real rendered heights so pages never overlap/crop when zoom changes.
-    measureElement: (el) => el.getBoundingClientRect().height,
+    // Use fixed A4 height - no dynamic measurement to prevent jitter
+    estimateSize: () => fixedPageHeight,
     // Higher overscan for smoother fast scrolling
     overscan: 5,
     paddingStart: 16,
@@ -392,11 +391,12 @@ export function VirtualizedPdfViewer({
                 style={{
                   transform: `translateY(${virtualItem.start}px)`,
                   width: scaledWidth,
+                  minHeight: fixedA4Height,
                 }}
               >
                 <div 
                   className="flex items-center justify-center bg-destructive/10 rounded-sm"
-                  style={{ width: scaledWidth, height: scaledHeight }}
+                  style={{ width: scaledWidth, height: fixedA4Height }}
                 >
                   <span className="text-xs text-destructive">Page not found</span>
                 </div>
@@ -414,10 +414,10 @@ export function VirtualizedPdfViewer({
               key={`page-${pageNumber}-seg${segment.segment_index}`}
               data-index={virtualItem.index}
               className="absolute top-0 left-0"
-                ref={virtualizer.measureElement}
               style={{
                 transform: `translateY(${virtualItem.start}px)`,
                 width: scaledWidth,
+                minHeight: fixedA4Height,
               }}
             >
               <SegmentedPdfPage
@@ -425,7 +425,7 @@ export function VirtualizedPdfViewer({
                 segment={segment}
                 cachedUrl={cachedUrl}
                 scaledWidth={scaledWidth}
-                estimatedHeight={scaledHeight}
+                estimatedHeight={fixedA4Height}
                 registerPage={stableRegisterPage}
                 totalPages={numPages}
                 onLoadError={handleSegmentLoadError}
@@ -440,16 +440,16 @@ export function VirtualizedPdfViewer({
             key={`page-${pageNumber}`}
             data-index={virtualItem.index}
             className="absolute top-0 left-0"
-            ref={virtualizer.measureElement}
             style={{
               transform: `translateY(${virtualItem.start}px)`,
               width: scaledWidth,
+              minHeight: fixedA4Height,
             }}
           >
             <LegacyPdfPage
               pageNumber={pageNumber}
               scaledWidth={scaledWidth}
-              estimatedHeight={scaledHeight}
+              estimatedHeight={fixedA4Height}
               registerPage={stableRegisterPage}
               totalPages={numPages}
             />
