@@ -1,210 +1,169 @@
 
+# Fix Pinch Zoom + Scroll Conflict on Mobile
 
-# Fix Plan: Scroll/Zoom Issues and Upload ArrayBuffer Error
+## Problem Summary
 
-## Issue 1: Cannot Scroll Left/Right When Zoomed
+When you pinch to zoom (browser-level zoom) on the PDF reader:
+- Sometimes zoom works but scroll doesn't work afterward
+- Other times scroll works but zoom stops working
 
-### Root Cause
-The scroll container in `SecureReaderScreen.tsx` (lines 702-719) has `overflow-auto` which should allow scrolling, but there are CSS/layout issues preventing horizontal scrolling:
+This creates an inconsistent user experience on iOS and Android.
 
-1. The content wrapper sets `width` but mobile browsers may not interpret this correctly for horizontal scroll
-2. The `overscroll-behavior: none` may interfere with horizontal panning
-3. Missing `touch-action` CSS that allows pan-x and pan-y
+## Root Cause
 
-### Solution
-Update the scroll container and content wrapper CSS to explicitly enable omnidirectional scrolling:
+**Multiple conflicting touch-action CSS properties**:
 
-**File: `src/pages/SecureReaderScreen.tsx`**
-- Add `overflow-x-auto` and `overflow-y-auto` explicitly (instead of just `overflow-auto`)
-- Remove `overscrollBehavior: 'none'` from inline styles (this blocks panning gestures)
-- Add `touch-action: pan-x pan-y` to allow finger-based panning in both directions
-- Ensure the content wrapper has proper minimum width to trigger horizontal scroll
+1. **Watermark component** (`src/components/Watermark.tsx` line 40):
+   ```css
+   touchAction: 'none'
+   ```
+   This blocks ALL touch gestures on the overlay, including pinch-zoom and panning.
 
-```text
-Before (line 704):
-┌──────────────────────────────────────────┐
-│ className="h-full overflow-auto ..."     │
-│ style={{                                 │
-│   overscrollBehavior: 'none',  ← Blocks! │
-│ }}                                       │
-└──────────────────────────────────────────┘
+2. **Scroll container** (`src/pages/SecureReaderScreen.tsx` line 715):
+   ```css
+   touchAction: 'pan-x pan-y pinch-zoom'
+   ```
+   This should allow gestures but gets overridden by the watermark layer above it.
 
-After:
-┌──────────────────────────────────────────────┐
-│ className="h-full overflow-x-auto            │
-│            overflow-y-auto overscroll-none"  │
-│ style={{                                     │
-│   touchAction: 'pan-x pan-y pinch-zoom',     │
-│ }}                                           │
-└──────────────────────────────────────────────┘
-```
+3. **Layer stacking issue**: The watermark sits on top (z-index: 100) and intercepts touch events before they reach the scroll container.
+
+4. **Missing viewport configuration**: The viewport meta tag doesn't explicitly enable user scaling, which some mobile browsers require.
 
 ---
 
-## Issue 2: Upload Fails with "Cannot Construct on Detached ArrayBuffer"
+## Solution
 
-### Root Cause
-In `ContentUpload.tsx`, the upload flow:
+### Step 1: Fix Watermark Touch Handling
 
-1. **Line 158**: Reads PDF as ArrayBuffer: `await selectedFile.arrayBuffer()`
-2. **Line 165**: Passes to TOC extraction: `extractTableOfContents(arrayBuffer)`
-   - Inside, `pdfjs.getDocument({ data: pdfBytes })` **transfers** the ArrayBuffer
-3. **Line 178**: Tries to reuse same ArrayBuffer: `splitPdfIntoSegments(arrayBuffer)`
-   - This fails because the ArrayBuffer is now **detached**
+Update the Watermark component to allow touch gestures to pass through while still blocking visual selection.
 
-When `pdfjs.getDocument()` receives an ArrayBuffer, it transfers ownership by default, making the original ArrayBuffer unusable (detached).
+**File: `src/components/Watermark.tsx`**
 
-### Solution
-Create a copy of the ArrayBuffer before passing to `extractTableOfContents()`, or read the file twice. The cleanest approach is to copy the ArrayBuffer:
-
-**File: `src/components/admin/ContentUpload.tsx`**
+Change `touchAction: 'none'` to `touchAction: 'auto'`:
 
 ```typescript
-// Line 158-165: Create a copy for TOC extraction
-const arrayBuffer = await selectedFile.arrayBuffer();
-
-// Create a copy for TOC extraction (pdfjs detaches the original)
-const tocArrayBuffer = arrayBuffer.slice(0);
-
-// Use the copy for TOC
-setUploadStatus('Extracting table of contents...');
-setUploadProgress(8);
-let tocData = null;
-try {
-  tocData = await extractTableOfContents(tocArrayBuffer);
-  // ...
-}
-
-// Original arrayBuffer is still intact for splitPdfIntoSegments
-setUploadStatus('Splitting PDF into segments...');
-setUploadProgress(12);
-const segments = await splitPdfIntoSegments(arrayBuffer);
+style={{ 
+  zIndex: 100,
+  touchAction: 'auto',        // ← Allow gestures to pass through
+  WebkitTouchCallout: 'none',
+  WebkitUserSelect: 'none',
+  userSelect: 'none',
+}}
 ```
 
-The key change is `arrayBuffer.slice(0)` which creates a complete copy of the ArrayBuffer that can be detached independently.
+Why this works:
+- `pointer-events: none` (in className) already prevents the watermark from receiving click/touch events
+- `touchAction: 'auto'` allows the browser to handle gestures normally
+- The security properties (userSelect, WebkitTouchCallout) are preserved for preventing copying
+
+### Step 2: Configure Viewport for Mobile Zoom
+
+Update the viewport meta tag to explicitly allow user scaling on mobile.
+
+**File: `index.html`**
+
+```html
+<meta 
+  name="viewport" 
+  content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes" 
+/>
+```
+
+- `maximum-scale=5.0`: Allows up to 5x zoom (adjustable based on preference)
+- `user-scalable=yes`: Explicitly enables pinch-to-zoom
+
+### Step 3: Simplify Scroll Container CSS
+
+Remove conflicting touch-action properties and let the browser handle gestures naturally.
+
+**File: `src/pages/SecureReaderScreen.tsx`**
+
+Update the scroll container (around line 709-716):
+
+```typescript
+<div 
+  ref={scrollContainerRef}
+  className="h-full overflow-x-auto overflow-y-auto overscroll-none"
+  style={{
+    WebkitOverflowScrolling: 'touch',
+    // Let browser handle all touch gestures naturally
+    touchAction: 'auto',
+  }}
+>
+```
+
+Using `touchAction: 'auto'` instead of `pan-x pan-y pinch-zoom`:
+- Removes any custom gesture restrictions
+- Browser handles pinch-zoom natively
+- Scroll/pan works automatically after zoom
+- No conflicts between different gesture types
 
 ---
 
-## Summary of Changes
+## Technical Explanation
+
+### How Mobile Touch Gestures Work
+
+```
+                     User touches screen
+                            │
+                            ▼
+           ┌────────────────────────────────┐
+           │  Browser checks touchAction    │
+           │  on touched element + parents  │
+           └────────────────────────────────┘
+                            │
+        ┌───────────────────┴───────────────────┐
+        ▼                                       ▼
+   touchAction: 'none'                 touchAction: 'auto'
+   ─────────────────                   ─────────────────
+   Block ALL gestures                  Allow ALL gestures
+   (no zoom, no scroll)                (zoom + scroll work)
+```
+
+The watermark with `touchAction: 'none'` was sitting on top (z-index: 100) and blocking all gestures even though it had `pointer-events: none`. This is because `touchAction` is evaluated independently from pointer events.
+
+### Why pointer-events: none isn't enough
+
+- `pointer-events: none`: Prevents click/tap events, mouse events
+- `touchAction`: Controls gesture behavior (scroll, zoom, pan)
+
+These are separate browser behaviors. You can have `pointer-events: none` but still have `touchAction: none` block gestures.
+
+---
+
+## Files to Modify
 
 | File | Change |
 |------|--------|
-| `src/pages/SecureReaderScreen.tsx` | Update scroll container CSS to enable omnidirectional pan/scroll when zoomed |
-| `src/components/admin/ContentUpload.tsx` | Copy ArrayBuffer before TOC extraction to prevent detachment error |
+| `src/components/Watermark.tsx` | Change `touchAction: 'none'` to `touchAction: 'auto'` |
+| `index.html` | Add `maximum-scale=5.0, user-scalable=yes` to viewport |
+| `src/pages/SecureReaderScreen.tsx` | Simplify touchAction to `'auto'` |
 
-## Technical Details
+---
 
-### Why `ArrayBuffer.slice(0)` Works
-- `ArrayBuffer.slice()` creates a new ArrayBuffer with copied bytes
-- The original and copy are independent - detaching one doesn't affect the other
-- `slice(0)` means "copy from index 0 to end" = full copy
+## Expected Behavior After Fix
 
-### Why `touch-action: pan-x pan-y` is Needed
-- Mobile browsers use touch-action CSS to determine which gestures to allow
-- Without it, the browser may capture pan gestures for navigation (back/forward swipe)
-- `pan-x pan-y` explicitly allows finger panning in both directions
-- `pinch-zoom` allows native browser pinch zoom gestures
+| Action | Before | After |
+|--------|--------|-------|
+| Pinch to zoom | Sometimes works, sometimes blocked | Always works |
+| One-finger scroll after zoom | Often blocked | Always works |
+| Pan in all directions when zoomed | Hit or miss | Works naturally |
+| Security (watermark, copy protection) | Protected | Still protected |
 
-Fix Missing Images in PDF Reader
-Problem Analysis
-After investigating the codebase and researching react-pdf configuration, I identified the root cause of missing images and content in the PDF reader.
+---
 
-Root Cause: Missing PDF.js Configuration Options
-The Document components in both VirtualizedPdfViewer.tsx (segmented mode) and SecureReaderScreen.tsx (legacy mode) are missing the options prop that provides critical resources to the PDF.js rendering engine:
+## Testing Checklist
 
+After implementation, test on:
+- [ ] iOS Safari (physical iPhone/iPad)
+- [ ] Android Chrome (physical device)
+- [ ] iOS app build (if using Capacitor)
+- [ ] Android app build (if using Capacitor)
 
-Current Code (both files):
-┌─────────────────────────────────┐
-│ <Document                       │
-│   file={pdfUrl}                 │
-│   ...                           │
-│ >  ← Missing 'options' prop!    │
-└─────────────────────────────────┘
-What's Missing
-Option	Purpose	Impact When Missing
-cMapUrl	URL to character map files for fonts	Non-Latin text, special characters may not render
-cMapPacked	Indicates CMaps are in compressed format	Required when using CDN CMaps
-standardFontDataUrl	URL to standard PDF font data	Standard PDF fonts may render incorrectly or not at all
-PDFs often embed content in ways that require these external resources to render properly. Medical PDFs are particularly affected because they frequently use:
-
-Special symbols and characters
-Embedded fonts that reference standard PDF fonts
-Complex layouts that mix text and images
-Solution
-Add the options prop to all Document components with proper CDN URLs for PDF.js resources.
-
-Files to Modify
-src/components/reader/VirtualizedPdfViewer.tsx
-
-Add pdfjs import from react-pdf
-Create options constant with CDN URLs
-Apply options to the Document component in SegmentedPdfPage
-src/pages/SecureReaderScreen.tsx
-
-Create options constant with CDN URLs
-Apply options to the legacy Document component
-Implementation Details
-Step 1: Update VirtualizedPdfViewer.tsx
-
-// At the top of the file, add pdfjs import
-import { Document, Page, pdfjs } from 'react-pdf';
-
-// Create options constant (outside component)
-const pdfOptions = {
-  cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfjs.version}/cmaps/`,
-  cMapPacked: true,
-  standardFontDataUrl: `https://unpkg.com/pdfjs-dist@${pdfjs.version}/standard_fonts/`,
-};
-
-// In SegmentedPdfPage component, update the Document:
-<Document
-  file={cachedUrl}
-  loading={null}
-  error={null}
-  onLoadError={handleLoadError}
-  options={pdfOptions}  // ← Add this
->
-Step 2: Update SecureReaderScreen.tsx
-
-// Create options constant (near the top, after pdfjs import)
-const pdfOptions = {
-  cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfjs.version}/cmaps/`,
-  cMapPacked: true,
-  standardFontDataUrl: `https://unpkg.com/pdfjs-dist@${pdfjs.version}/standard_fonts/`,
-};
-
-// In the legacy Document component:
-<Document
-  file={pdfSource}
-  onLoadSuccess={(loadedDoc) => onDocumentLoadSuccess({ numPages: loadedDoc.numPages }, loadedDoc)}
-  options={pdfOptions}  // ← Add this
-  loading={...}
-  error={...}
->
-Why This Fixes Missing Images
-Some PDFs encode content in ways that require these resources:
-
-Character Maps (CMaps): PDFs can reference external character encoding maps. Without these, text may appear as blank spaces or the entire text layer may fail to render.
-
-Standard Fonts: PDFs can reference the 14 standard PDF fonts (Helvetica, Times, Courier, etc.) without embedding them. If the viewer can't load these fonts, text renders incorrectly or content that depends on font metrics breaks.
-
-Cascade Effect: When font/text rendering fails, it can sometimes affect the layout engine's understanding of where images should be placed, causing them to appear clipped or missing.
-
-Technical Notes
-CDN Choice
-Using unpkg.com to serve the PDF.js resources because:
-
-It's the same CDN used for the worker script
-Matches the exact version of pdfjs-dist installed
-No need to bundle these resources (saves ~3MB)
-Version Matching
-The options use pdfjs.version to ensure the CMaps and fonts match the exact PDF.js version, preventing compatibility issues.
-
-Performance
-These resources are loaded on-demand by PDF.js only when needed. Most simple PDFs won't request them at all.
-
-Summary of Changes
-File	Change
-src/components/reader/VirtualizedPdfViewer.tsx	Add pdfjs import, create pdfOptions constant, add options={pdfOptions} to Document
-src/pages/SecureReaderScreen.tsx	Create pdfOptions constant, add options={pdfOptions} to legacy Document
-This should resolve the missing images and content issue by providing PDF.js with the resources it needs to fully render complex PDFs.
+Test scenarios:
+1. Pinch to zoom in on a PDF page
+2. While zoomed, scroll up/down
+3. While zoomed, scroll left/right (pan)
+4. Pinch to zoom out
+5. Verify watermark is still visible and text is still non-selectable
