@@ -33,12 +33,17 @@ interface UseSegmentManagerResult {
   totalPages: number;
   error: string | null;
   isSegmented: boolean;
+  refreshAllUrls: () => Promise<void>;
 }
 
 // Signed URLs are valid for 5 minutes - long enough for smooth reading
 const SIGNED_URL_EXPIRY_SECONDS = 5 * 60; // 5 minutes
 // Refresh threshold - refresh when 60 seconds left (not 15, to reduce churn)
 const REFRESH_THRESHOLD_MS = 60 * 1000;
+// Max retry attempts for fetching segment URLs
+const MAX_FETCH_RETRIES = 3;
+// Delay between retries
+const RETRY_DELAY_MS = 1000;
 
 export function useSegmentManager({
   contentId,
@@ -55,9 +60,44 @@ export function useSegmentManager({
   const urlCache = useRef<Map<number, SegmentCache>>(new Map());
   // Track which segments are currently being fetched
   const fetchingSegments = useRef<Set<number>>(new Set());
+  // Track retry counts for segments
+  const retryCountRef = useRef<Map<number, number>>(new Map());
   
   // Force re-render when cache updates
   const [cacheVersion, setCacheVersion] = useState(0);
+
+  // Handle visibility change - refresh URLs when app becomes visible
+  useEffect(() => {
+    if (!enabled || !contentId) return;
+
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === 'visible') {
+        console.log('[SegmentManager] App became visible, checking URL validity...');
+        
+        // Check if any cached URLs are expired or expiring soon
+        const now = Date.now();
+        let needsRefresh = false;
+        
+        urlCache.current.forEach((cache, index) => {
+          if (cache.expiresAt <= now + REFRESH_THRESHOLD_MS) {
+            console.log(`[SegmentManager] Segment ${index} URL expired or expiring, will refresh`);
+            urlCache.current.delete(index);
+            needsRefresh = true;
+          }
+        });
+        
+        if (needsRefresh) {
+          setCacheVersion(v => v + 1);
+          // Clear error state to allow retries
+          setError(null);
+          retryCountRef.current.clear();
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [enabled, contentId]);
 
   // Fetch segments metadata on mount
   useEffect(() => {
@@ -100,6 +140,7 @@ export function useSegmentManager({
         
         // Clear URL cache when segments change
         urlCache.current.clear();
+        retryCountRef.current.clear();
         setCacheVersion(v => v + 1);
       } catch (err) {
         console.error('Error fetching segments:', err);
@@ -119,10 +160,16 @@ export function useSegmentManager({
     ) || null;
   }, [segments]);
 
-  // Fetch signed URL for a segment
-  const fetchSegmentUrl = useCallback(async (segment: Segment): Promise<string | null> => {
+  // Fetch signed URL for a segment with retry logic
+  const fetchSegmentUrl = useCallback(async (segment: Segment, retryCount = 0): Promise<string | null> => {
     // Check if already fetching
     if (fetchingSegments.current.has(segment.segment_index)) {
+      // Wait for existing fetch to complete
+      await new Promise(resolve => setTimeout(resolve, 100));
+      const cached = urlCache.current.get(segment.segment_index);
+      if (cached && cached.expiresAt > Date.now()) {
+        return cached.signedUrl;
+      }
       return null;
     }
 
@@ -136,12 +183,20 @@ export function useSegmentManager({
     setIsLoadingSegment(true);
 
     try {
-      const deviceId = await getDeviceId();
-      const { data: { session } } = await supabase.auth.getSession();
+      // First ensure we have a valid session
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       
-      if (!session) {
-        throw new Error('Not authenticated');
+      if (sessionError || !session) {
+        console.log('[SegmentManager] No valid session, attempting refresh...');
+        const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+        
+        if (refreshError || !refreshData.session) {
+          throw new Error('Session expired - please log in again');
+        }
+        console.log('[SegmentManager] Session refreshed successfully');
       }
+
+      const deviceId = await getDeviceId();
 
       // Call edge function to get signed URL for segment
       const response = await supabase.functions.invoke('get-segment-url', {
@@ -166,11 +221,27 @@ export function useSegmentManager({
 
       // Cache the URL
       urlCache.current.set(segment.segment_index, { signedUrl, expiresAt });
+      retryCountRef.current.delete(segment.segment_index);
       setCacheVersion(v => v + 1);
+      
+      // Clear error since we succeeded
+      setError(null);
 
       return signedUrl;
     } catch (err) {
-      console.error(`Error fetching segment ${segment.segment_index} URL:`, err);
+      console.error(`[SegmentManager] Error fetching segment ${segment.segment_index} URL (attempt ${retryCount + 1}):`, err);
+      
+      // Retry logic
+      if (retryCount < MAX_FETCH_RETRIES - 1) {
+        console.log(`[SegmentManager] Retrying in ${RETRY_DELAY_MS}ms...`);
+        fetchingSegments.current.delete(segment.segment_index);
+        setIsLoadingSegment(false);
+        
+        await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
+        return fetchSegmentUrl(segment, retryCount + 1);
+      }
+      
+      retryCountRef.current.set(segment.segment_index, retryCount + 1);
       setError(err instanceof Error ? err.message : 'Failed to load segment');
       return null;
     } finally {
@@ -260,6 +331,22 @@ export function useSegmentManager({
   // Determine if content is segmented (has segments) or legacy (single file)
   const isSegmented = segments.length > 0;
 
+  // Force refresh all cached URLs - useful after session recovery
+  const refreshAllUrls = useCallback(async () => {
+    console.log('[SegmentManager] Refreshing all segment URLs...');
+    
+    // Clear all cached URLs and retry counts
+    urlCache.current.clear();
+    retryCountRef.current.clear();
+    setError(null);
+    setCacheVersion(v => v + 1);
+    
+    // Refetch the active segment
+    if (activeSegment) {
+      await fetchSegmentUrl(activeSegment);
+    }
+  }, [activeSegment, fetchSegmentUrl]);
+
   return {
     segments,
     isLoadingSegments,
@@ -272,5 +359,6 @@ export function useSegmentManager({
     totalPages,
     error,
     isSegmented,
+    refreshAllUrls,
   };
 }

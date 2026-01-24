@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { X, Loader2, AlertTriangle, ZoomIn, ZoomOut, Menu, BookOpen } from 'lucide-react';
+import { X, Loader2, AlertTriangle, ZoomIn, ZoomOut, Menu, BookOpen, RefreshCw } from 'lucide-react';
 import { Document, pdfjs } from 'react-pdf';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -22,6 +22,7 @@ import { useScrollPageDetection } from '@/hooks/useScrollPageDetection';
 import { usePdfOutline, OutlineItem } from '@/hooks/usePdfOutline';
 import { useSignedUrlRefresh } from '@/hooks/useSignedUrlRefresh';
 import { useSegmentManager } from '@/hooks/useSegmentManager';
+import { useSessionRecovery } from '@/hooks/useSessionRecovery';
 import { ExtractedToc } from '@/lib/pdfTocExtractor';
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
@@ -79,10 +80,14 @@ export default function SecureReaderScreen() {
   const [isJumpingToPage, setIsJumpingToPage] = useState(false);
   const [jumpTargetPage, setJumpTargetPage] = useState<number | null>(null);
   const [storedToc, setStoredToc] = useState<ExtractedToc | null>(null);
+  const [isRecoveringSession, setIsRecoveringSession] = useState(false);
   
   // Store the PDF URL in a ref so refreshes don't trigger re-renders
   const pdfUrlRef = useRef<string | null>(null);
   const expiresAtRef = useRef<number | null>(null);
+  
+  // Track if we've already loaded content once (for recovery purposes)
+  const hasLoadedContentRef = useRef(false);
 
   const { 
     containerRef: scrollContainerRef, 
@@ -106,11 +111,40 @@ export default function SecureReaderScreen() {
     totalPages: segmentedTotalPages,
     isSegmented,
     prefetchSegmentForPage,
+    refreshAllUrls,
   } = useSegmentManager({
     contentId: id,
     currentPage,
     enabled: hasAccess && !isLegacyContent && !loading,
   });
+
+  // Session recovery - automatically refresh session when app regains focus
+  const handleSessionRecovered = useCallback(() => {
+    console.log('[SecureReader] Session recovered, refreshing URLs...');
+    setIsRecoveringSession(false);
+    
+    // Refresh segment URLs if we're using segmented content
+    if (isSegmented && refreshAllUrls) {
+      refreshAllUrls();
+    }
+  }, [isSegmented, refreshAllUrls]);
+
+  const handleRecoveryFailed = useCallback((error: Error) => {
+    console.error('[SecureReader] Session recovery failed:', error);
+    setIsRecoveringSession(false);
+    // Don't navigate away - let user continue with cached content if possible
+  }, []);
+
+  const { isRecovering: isSessionRecovering, refreshSession } = useSessionRecovery({
+    enabled: hasAccess && !!content,
+    onSessionRecovered: handleSessionRecovered,
+    onRecoveryFailed: handleRecoveryFailed,
+  });
+
+  // Update recovering state for UI
+  useEffect(() => {
+    setIsRecoveringSession(isSessionRecovering);
+  }, [isSessionRecovering]);
 
   const {
     savedProgress,
@@ -599,6 +633,14 @@ export default function SecureReaderScreen() {
         screenshotDetected={screenshotDetected}
         onDismiss={clearScreenshotAlert}
       />
+
+      {/* Session Recovery Indicator */}
+      {isRecoveringSession && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 rounded-full bg-card/95 backdrop-blur-sm px-4 py-2 shadow-lg border border-border">
+          <RefreshCw className="h-4 w-4 animate-spin text-primary" />
+          <span className="text-xs font-medium text-foreground">Reconnecting...</span>
+        </div>
+      )}
 
       {/* Page Jump Loading Overlay */}
       {isJumpingToPage && (
