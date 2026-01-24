@@ -124,8 +124,13 @@ export default function SecureReaderScreen() {
     totalPages: numPages,
   });
 
+  // Handle zoom changes - scroll to current page after re-render
+  const handleZoomChange = useCallback((newZoom: number, pageToRestore: number) => {
+    // Use virtualizer to scroll to the page we were on before zoom
+    viewerApiRef.current?.scrollToPage(pageToRestore, false);
+  }, []);
+
   // Width-based zoom - pages re-render at different widths for crisp text
-  // Pass scrollContainerRef to preserve scroll position during zoom
   const { 
     zoomLevel, 
     zoomIn, 
@@ -135,7 +140,8 @@ export default function SecureReaderScreen() {
   } = usePinchZoom({
     minScale: 1,
     maxScale: 2,
-    scrollContainerRef,
+    currentPage,
+    onZoomChange: handleZoomChange,
   });
 
   // Calculate page width based on zoom level (native approach - no CSS transforms)
