@@ -349,8 +349,13 @@ export function VirtualizedPdfViewer({
   const virtualizer = useVirtualizer({
     count: numPages,
     getScrollElement: () => scrollContainerRef.current,
-    // Use default estimate - pages have fixed heights based on their actual ratio
+    // Use default estimate; we'll measure real DOM heights, but never allow shrink below per-page minimum.
     estimateSize: () => defaultPageHeight,
+    measureElement: (el) => {
+      const min = Number(el.getAttribute('data-min-height') ?? 0);
+      const measured = el.getBoundingClientRect().height;
+      return Math.max(min, measured);
+    },
     // Higher overscan for smoother fast scrolling
     overscan: 5,
     paddingStart: 16,
@@ -405,16 +410,19 @@ export function VirtualizedPdfViewer({
           
           if (!segment) {
             const pageHeight = getPageHeight(pageNumber);
+            const minRowHeight = pageHeight + pageGap;
             // Page not found in any segment - show error
             return (
               <div
                 key={`page-${pageNumber}`}
                 data-index={virtualItem.index}
+                data-min-height={minRowHeight}
                 className="absolute top-0 left-0"
+                ref={virtualizer.measureElement}
                 style={{
                   transform: `translateY(${virtualItem.start}px)`,
                   width: scaledWidth,
-                  minHeight: pageHeight,
+                  minHeight: minRowHeight,
                 }}
               >
                 <div 
@@ -432,16 +440,19 @@ export function VirtualizedPdfViewer({
           // Get stable URL from cache - prevents re-downloads when URL refreshes
           const cachedUrl = getStableUrl(segment.segment_index, freshUrl);
           const pageHeight = getPageHeight(pageNumber);
+          const minRowHeight = pageHeight + pageGap;
           
           return (
             <div
               key={`page-${pageNumber}-seg${segment.segment_index}`}
               data-index={virtualItem.index}
+              data-min-height={minRowHeight}
               className="absolute top-0 left-0"
+              ref={virtualizer.measureElement}
               style={{
                 transform: `translateY(${virtualItem.start}px)`,
                 width: scaledWidth,
-                minHeight: pageHeight,
+                minHeight: minRowHeight,
               }}
             >
               <SegmentedPdfPage
@@ -461,15 +472,18 @@ export function VirtualizedPdfViewer({
         
         // Legacy mode: pages rendered from parent Document context
         const pageHeight = getPageHeight(pageNumber);
+        const minRowHeight = pageHeight + pageGap;
         return (
           <div
             key={`page-${pageNumber}`}
             data-index={virtualItem.index}
+            data-min-height={minRowHeight}
             className="absolute top-0 left-0"
+            ref={virtualizer.measureElement}
             style={{
               transform: `translateY(${virtualItem.start}px)`,
               width: scaledWidth,
-              minHeight: pageHeight,
+              minHeight: minRowHeight,
             }}
           >
             <LegacyPdfPage
