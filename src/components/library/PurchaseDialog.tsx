@@ -175,10 +175,12 @@ export function PurchaseDialog({ content, onClose, onPurchaseSubmitted }: Purcha
         <div className="relative px-4 sm:px-6 pt-5 sm:pt-6 pb-3 sm:pb-4">
           <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-[hsl(var(--gold))] to-[hsl(38_72%_55%)]" />
           <DialogHeader>
-            <div className="flex items-start gap-3 sm:gap-4">
-              <BookCover coverUrl={content.cover_url} title={content.title} size="sm" />
-              <div className="flex-1 min-w-0">
-                <DialogTitle className="font-display text-base sm:text-lg leading-tight line-clamp-2 pr-6">
+            <div className="flex items-start gap-3 sm:gap-4 pr-8">
+              <div className="shrink-0">
+                <BookCover coverUrl={content.cover_url} title={content.title} size="sm" />
+              </div>
+              <div className="flex-1 min-w-0 overflow-hidden">
+                <DialogTitle className="font-display text-sm sm:text-lg leading-tight line-clamp-3 break-words">
                   {content.title}
                 </DialogTitle>
                 <DialogDescription className="text-muted-foreground mt-1 text-xs sm:text-sm">
