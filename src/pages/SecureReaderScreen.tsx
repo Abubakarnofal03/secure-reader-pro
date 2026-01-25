@@ -684,49 +684,51 @@ export default function SecureReaderScreen() {
       />
 
       {/* Premium Reader Header */}
-      <header className="sticky top-0 z-30 glass border-b border-border/50 px-4 py-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
+      <header className="sticky top-0 z-30 glass border-b border-border/50 px-2 sm:px-4 py-2 sm:py-3">
+        <div className="flex items-center justify-between gap-1 sm:gap-2">
+          {/* Left controls - shrink-0 to prevent shrinking */}
+          <div className="flex items-center gap-1 shrink-0">
             <button
               onClick={() => setShowToc(true)}
-              className="flex h-10 w-10 items-center justify-center rounded-xl hover:bg-secondary transition-colors"
+              className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl hover:bg-secondary transition-colors"
               title="Table of Contents"
             >
-              <Menu className="h-5 w-5 text-foreground" />
+              <Menu className="h-4 w-4 sm:h-5 sm:w-5 text-foreground" />
             </button>
             <button
               onClick={handleClose}
-              className="flex h-10 w-10 items-center justify-center rounded-xl hover:bg-secondary transition-colors"
+              className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl hover:bg-secondary transition-colors"
             >
-              <X className="h-5 w-5 text-foreground" />
+              <X className="h-4 w-4 sm:h-5 sm:w-5 text-foreground" />
             </button>
           </div>
           
-          <div className="text-center flex-1 mx-4">
-            <h1 className="line-clamp-1 font-display text-base font-semibold text-foreground">
+          {/* Title section - allow shrinking with min-w-0 */}
+          <div className="text-center flex-1 min-w-0 mx-1 sm:mx-4">
+            <h1 className="line-clamp-1 font-display text-sm sm:text-base font-semibold text-foreground truncate">
               {content?.title}
             </h1>
             <button
               onClick={() => setShowGoToDialog(true)}
-              className="text-xs text-muted-foreground hover:text-primary transition-colors"
+              className="text-[10px] sm:text-xs text-muted-foreground hover:text-primary transition-colors truncate max-w-full"
             >
               Page {currentPage} of {numPages || '...'} • Tap to jump
             </button>
           </div>
           
-          {/* Refined Zoom Controls */}
-          <div className="flex items-center gap-1 bg-muted/50 rounded-xl p-1">
+          {/* Zoom Controls - shrink-0 to prevent overflow */}
+          <div className="flex items-center gap-0.5 sm:gap-1 bg-muted/50 rounded-lg sm:rounded-xl p-0.5 sm:p-1 shrink-0">
             <button
               onClick={zoomOut}
               disabled={zoomLevel <= 1}
-              className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-card disabled:opacity-30 transition-all"
+              className="flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-md sm:rounded-lg hover:bg-card disabled:opacity-30 transition-all"
               title="Zoom out"
             >
-              <ZoomOut className="h-4 w-4 text-foreground" />
+              <ZoomOut className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-foreground" />
             </button>
             <button
               onClick={resetZoom}
-              className="px-2 py-1 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors min-w-[3rem] rounded-lg hover:bg-card"
+              className="px-1 sm:px-2 py-0.5 sm:py-1 text-[10px] sm:text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors min-w-[2.25rem] sm:min-w-[3rem] rounded-md sm:rounded-lg hover:bg-card"
               title="Reset zoom"
             >
               {Math.round(zoomLevel * 100)}%
@@ -734,10 +736,10 @@ export default function SecureReaderScreen() {
             <button
               onClick={zoomIn}
               disabled={zoomLevel >= 2}
-              className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-card disabled:opacity-30 transition-all"
+              className="flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-md sm:rounded-lg hover:bg-card disabled:opacity-30 transition-all"
               title="Zoom in"
             >
-              <ZoomIn className="h-4 w-4 text-foreground" />
+              <ZoomIn className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-foreground" />
             </button>
           </div>
         </div>
