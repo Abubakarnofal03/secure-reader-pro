@@ -170,17 +170,17 @@ export function PurchaseDialog({ content, onClose, onPurchaseSubmitted }: Purcha
 
   return (
     <Dialog open={!!content} onOpenChange={handleClose}>
-      <DialogContent className="w-[calc(100vw-2rem)] max-w-md max-h-[85vh] overflow-y-auto rounded-2xl border-border/80 shadow-[var(--shadow-xl)] p-0">
+      <DialogContent className="w-[calc(100vw-2rem)] max-w-md max-h-[85vh] overflow-y-auto overflow-x-hidden rounded-2xl border-border/80 shadow-[var(--shadow-xl)] p-0">
         {/* Premium Header */}
-        <div className="relative px-4 sm:px-6 pt-5 sm:pt-6 pb-3 sm:pb-4">
+        <div className="relative px-4 sm:px-6 pt-5 sm:pt-6 pb-3 sm:pb-4 overflow-hidden">
           <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-[hsl(var(--gold))] to-[hsl(38_72%_55%)]" />
-          <DialogHeader>
+          <DialogHeader className="overflow-hidden">
             <div className="flex items-start gap-3 sm:gap-4 pr-8">
               <div className="shrink-0">
                 <BookCover coverUrl={content.cover_url} title={content.title} size="sm" />
               </div>
               <div className="flex-1 min-w-0 overflow-hidden">
-                <DialogTitle className="font-display text-sm sm:text-lg leading-tight line-clamp-3 break-words">
+                <DialogTitle className="font-display text-sm sm:text-lg leading-tight line-clamp-3 break-all">
                   {content.title}
                 </DialogTitle>
                 <DialogDescription className="text-muted-foreground mt-1 text-xs sm:text-sm">
@@ -205,21 +205,21 @@ export function PurchaseDialog({ content, onClose, onPurchaseSubmitted }: Purcha
             </p>
           </div>
         ) : (
-          <div className="px-4 sm:px-6 pb-4 sm:pb-6 space-y-4 sm:space-y-5">
+          <div className="px-4 sm:px-6 pb-4 sm:pb-6 space-y-4 sm:space-y-5 overflow-hidden">
             {/* Premium Price Display */}
             <div className="relative rounded-xl sm:rounded-2xl bg-gradient-to-br from-primary/5 to-primary/10 border border-primary/20 p-4 sm:p-5 text-center overflow-hidden">
               <div className="absolute top-0 right-0 w-16 sm:w-20 h-16 sm:h-20 bg-gradient-to-br from-[hsl(43_74%_49%/0.1)] to-transparent rounded-full -translate-y-1/2 translate-x-1/2" />
               <p className="text-[10px] sm:text-xs uppercase tracking-wider text-muted-foreground font-medium">Amount</p>
-              <p className="text-3xl sm:text-4xl font-display font-bold text-foreground mt-1">
+              <p className="text-2xl sm:text-4xl font-display font-bold text-foreground mt-1 break-all">
                 {formatPrice(content.price)}
               </p>
             </div>
 
             {/* Bank Details */}
-            <div>
+            <div className="overflow-hidden">
               <h4 className="text-xs sm:text-sm font-semibold mb-2 sm:mb-3 flex items-center gap-2">
-                <Shield className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-muted-foreground" />
-                Payment Details
+                <Shield className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-muted-foreground shrink-0" />
+                <span>Payment Details</span>
               </h4>
               {loading ? (
                 <div className="rounded-lg sm:rounded-xl bg-muted/50 p-3 sm:p-4 border border-border/50">
@@ -227,8 +227,8 @@ export function PurchaseDialog({ content, onClose, onPurchaseSubmitted }: Purcha
                   <div className="h-4 bg-muted rounded animate-shimmer w-3/4" />
                 </div>
               ) : (
-                <div className="rounded-lg sm:rounded-xl bg-muted/50 p-3 sm:p-4 border border-border/50">
-                  <pre className="text-xs sm:text-sm whitespace-pre-wrap font-mono text-foreground leading-relaxed">
+                <div className="rounded-lg sm:rounded-xl bg-muted/50 p-3 sm:p-4 border border-border/50 overflow-x-auto">
+                  <pre className="text-xs sm:text-sm whitespace-pre-wrap font-mono text-foreground leading-relaxed break-words">
                     {bankDetails}
                   </pre>
                 </div>
@@ -236,9 +236,9 @@ export function PurchaseDialog({ content, onClose, onPurchaseSubmitted }: Purcha
             </div>
 
             {/* Payment Proof Upload */}
-            <div>
+            <div className="overflow-hidden">
               <h4 className="text-xs sm:text-sm font-semibold mb-1.5 sm:mb-2">Payment Confirmation</h4>
-              <p className="text-[10px] sm:text-xs text-muted-foreground mb-2 sm:mb-3">
+              <p className="text-[10px] sm:text-xs text-muted-foreground mb-2 sm:mb-3 break-words">
                 Upload a screenshot of your completed payment
               </p>
               
