@@ -6,240 +6,209 @@ import { useAuth } from '@/contexts/AuthContext';
 export default function SplashScreen() {
   const navigate = useNavigate();
   const { user, profile, loading } = useAuth();
-  const [animationPhase, setAnimationPhase] = useState<'initial' | 'visible' | 'zooming' | 'fading'>('initial');
+  const [phase, setPhase] = useState<'enter' | 'opening' | 'zoom' | 'exit'>('enter');
   const [showSplash, setShowSplash] = useState(true);
 
   useEffect(() => {
-    // Start visible phase
-    const visibleTimer = setTimeout(() => {
-      setAnimationPhase('visible');
-    }, 100);
-
-    // Start zoom effect
-    const zoomTimer = setTimeout(() => {
-      setAnimationPhase('zooming');
-    }, 2000);
-
-    // Start fade out
-    const fadeTimer = setTimeout(() => {
-      setAnimationPhase('fading');
-    }, 2600);
-
-    // End splash
-    const endTimer = setTimeout(() => {
-      setShowSplash(false);
-    }, 3000);
-
-    return () => {
-      clearTimeout(visibleTimer);
-      clearTimeout(zoomTimer);
-      clearTimeout(fadeTimer);
-      clearTimeout(endTimer);
-    };
+    const timers = [
+      setTimeout(() => setPhase('opening'), 400),
+      setTimeout(() => setPhase('zoom'), 1800),
+      setTimeout(() => setPhase('exit'), 2500),
+      setTimeout(() => setShowSplash(false), 2900),
+    ];
+    return () => timers.forEach(clearTimeout);
   }, []);
 
   useEffect(() => {
     if (!showSplash && !loading) {
       if (user && profile) {
-        if (profile.role === 'admin') {
-          navigate('/admin', { replace: true });
-        } else {
-          navigate('/library', { replace: true });
-        }
+        navigate(profile.role === 'admin' ? '/admin' : '/library', { replace: true });
       } else {
         navigate('/login', { replace: true });
       }
     }
   }, [showSplash, loading, user, profile, navigate]);
 
-  const isZooming = animationPhase === 'zooming' || animationPhase === 'fading';
+  // Calculate animation values based on phase
+  const isOpening = phase === 'opening' || phase === 'zoom' || phase === 'exit';
+  const isZooming = phase === 'zoom' || phase === 'exit';
+  const isExiting = phase === 'exit';
 
   return (
     <motion.div 
-      className="fixed inset-0 flex flex-col items-center justify-center bg-primary safe-top safe-bottom overflow-hidden z-50"
-      animate={{
-        opacity: animationPhase === 'fading' ? 0 : 1,
-      }}
+      className="fixed inset-0 flex items-center justify-center bg-primary overflow-hidden z-50"
+      initial={{ opacity: 1 }}
+      animate={{ opacity: isExiting ? 0 : 1 }}
       transition={{ duration: 0.4, ease: 'easeOut' }}
     >
-      {/* Subtle radial gradient background */}
-      <div className="absolute inset-0 bg-gradient-radial from-primary-foreground/5 via-transparent to-transparent" />
+      {/* Radial glow */}
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_hsl(var(--primary-foreground)/0.08)_0%,_transparent_60%)]" />
 
-      {/* Main content container with zoom animation */}
-      <motion.div 
-        className="relative flex flex-col items-center"
-        animate={{
-          scale: isZooming ? 20 : 1,
-          opacity: animationPhase === 'fading' ? 0 : 1,
+      {/* Book + Content container - handles the zoom */}
+      <motion.div
+        className="relative flex flex-col items-center will-change-transform"
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ 
+          scale: isZooming ? 8 : 1,
+          opacity: isZooming ? 0 : 1,
         }}
         transition={{ 
-          scale: { duration: 0.8, ease: [0.4, 0, 0.2, 1] },
-          opacity: { duration: 0.3 }
+          scale: { duration: 0.7, ease: [0.32, 0, 0.67, 0] },
+          opacity: { duration: 0.5, ease: 'easeOut' },
         }}
       >
-        {/* Premium Book Design */}
-        <motion.div
-          initial={{ scale: 0.8, opacity: 0 }}
-          animate={{ 
-            scale: 1, 
-            opacity: 1 
-          }}
-          transition={{ duration: 0.6, ease: 'easeOut' }}
-          className="relative"
+        {/* Book */}
+        <div 
+          className="relative w-28 h-40 will-change-transform"
+          style={{ perspective: '800px', perspectiveOrigin: 'center center' }}
         >
-          {/* Book container with 3D perspective */}
-          <div className="relative w-32 h-44">
-            {/* Book shadow */}
-            <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 w-28 h-4 bg-black/20 blur-xl rounded-full" />
-            
-            {/* Book spine */}
-            <div className="absolute left-0 top-0 w-3 h-full bg-gradient-to-r from-gold/60 to-gold/40 rounded-l-sm shadow-lg z-10">
-              {/* Spine decorative lines */}
-              <div className="absolute top-3 left-1/2 -translate-x-1/2 w-0.5 h-8 bg-gold-foreground/20 rounded-full" />
-              <div className="absolute bottom-3 left-1/2 -translate-x-1/2 w-0.5 h-8 bg-gold-foreground/20 rounded-full" />
-            </div>
-            
-            {/* Book cover */}
-            <motion.div 
-              className="absolute left-3 top-0 right-0 h-full rounded-r-md overflow-hidden"
-              initial={{ rotateY: -5 }}
-              animate={{ rotateY: 0 }}
-              transition={{ duration: 0.8, ease: 'easeOut' }}
-              style={{ transformStyle: 'preserve-3d' }}
-            >
-              {/* Main cover background - premium leather texture */}
-              <div className="absolute inset-0 bg-gradient-to-br from-[hsl(222_47%_18%)] via-[hsl(222_47%_14%)] to-[hsl(222_47%_10%)] border border-gold/30 rounded-r-md">
-                {/* Inner border decoration */}
-                <div className="absolute inset-2 border border-gold/20 rounded">
-                  {/* Corner decorations */}
-                  <div className="absolute top-0 left-0 w-4 h-4 border-t border-l border-gold/40" />
-                  <div className="absolute top-0 right-0 w-4 h-4 border-t border-r border-gold/40" />
-                  <div className="absolute bottom-0 left-0 w-4 h-4 border-b border-l border-gold/40" />
-                  <div className="absolute bottom-0 right-0 w-4 h-4 border-b border-r border-gold/40" />
-                </div>
-                
-                {/* Center emblem */}
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <motion.div
-                    initial={{ scale: 0.5, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    transition={{ delay: 0.3, duration: 0.5 }}
-                    className="relative"
-                  >
-                    {/* Gold emblem circle */}
-                    <div className="w-16 h-16 rounded-full border-2 border-gold/50 flex items-center justify-center">
-                      <div className="w-12 h-12 rounded-full border border-gold/30 flex items-center justify-center bg-gold/10">
-                        {/* Medical cross / book symbol */}
-                        <svg 
-                          viewBox="0 0 24 24" 
-                          className="w-6 h-6 text-gold"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="1.5"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
-                          <path d="M12 6v7" />
-                          <path d="M9 10h6" />
-                        </svg>
-                      </div>
-                    </div>
-                  </motion.div>
-                </div>
-                
-                {/* Top decorative line */}
-                <motion.div
-                  initial={{ scaleX: 0 }}
-                  animate={{ scaleX: 1 }}
-                  transition={{ delay: 0.4, duration: 0.5 }}
-                  className="absolute top-6 left-4 right-4 h-px bg-gradient-to-r from-transparent via-gold/40 to-transparent"
-                />
-                
-                {/* Bottom decorative line */}
-                <motion.div
-                  initial={{ scaleX: 0 }}
-                  animate={{ scaleX: 1 }}
-                  transition={{ delay: 0.5, duration: 0.5 }}
-                  className="absolute bottom-6 left-4 right-4 h-px bg-gradient-to-r from-transparent via-gold/40 to-transparent"
-                />
-              </div>
-              
-              {/* Subtle shine effect */}
-              <motion.div
-                initial={{ x: '-100%' }}
-                animate={{ x: '200%' }}
-                transition={{ delay: 0.8, duration: 1.5, ease: 'easeInOut' }}
-                className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent skew-x-12"
-              />
-            </motion.div>
-            
-            {/* Page edges visible on the right */}
-            <div className="absolute right-0 top-1 bottom-1 w-1 bg-gradient-to-r from-amber-100/80 to-amber-50/60 rounded-r-sm">
-              {/* Page line details */}
-              <div className="absolute inset-0 flex flex-col justify-center gap-px opacity-50">
-                {[...Array(20)].map((_, i) => (
-                  <div key={i} className="h-px bg-amber-200/50" />
-                ))}
-              </div>
-            </div>
-          </div>
-        </motion.div>
+          {/* Shadow */}
+          <motion.div 
+            className="absolute -bottom-3 left-1/2 -translate-x-1/2 w-24 h-3 bg-black/25 blur-lg rounded-full"
+            animate={{ opacity: isOpening ? 0.4 : 0.6, scale: isOpening ? 1.1 : 1 }}
+            transition={{ duration: 0.6 }}
+          />
 
-        {/* Title and tagline */}
+          {/* Back cover + pages */}
+          <div className="absolute inset-0 rounded-r-md bg-gradient-to-br from-[hsl(222_47%_16%)] to-[hsl(222_47%_10%)] border border-gold/20">
+            {/* Spine */}
+            <div className="absolute left-0 top-0 w-2.5 h-full bg-gradient-to-r from-gold/50 to-gold/30 rounded-l-sm" />
+            {/* Page edges */}
+            <motion.div 
+              className="absolute top-1 bottom-1 right-0 w-1 bg-gradient-to-b from-amber-50/90 via-amber-100/80 to-amber-50/90 rounded-r-sm origin-left"
+              animate={{ scaleX: isOpening ? 1 : 0 }}
+              transition={{ duration: 0.4, delay: 0.2 }}
+            />
+          </div>
+
+          {/* Inner pages (visible when open) */}
+          <motion.div
+            className="absolute top-1 bottom-1 left-3 right-1 bg-gradient-to-r from-amber-50/95 to-amber-100/90 rounded-r origin-left overflow-hidden"
+            initial={{ scaleX: 0, opacity: 0 }}
+            animate={{ 
+              scaleX: isOpening ? 1 : 0,
+              opacity: isOpening ? 1 : 0,
+            }}
+            transition={{ duration: 0.5, delay: 0.3, ease: 'easeOut' }}
+          >
+            {/* Page lines */}
+            <div className="absolute inset-3 flex flex-col justify-center gap-1.5">
+              {[...Array(6)].map((_, i) => (
+                <motion.div
+                  key={i}
+                  className="h-0.5 bg-amber-800/20 rounded"
+                  initial={{ scaleX: 0 }}
+                  animate={{ scaleX: isOpening ? 1 : 0 }}
+                  transition={{ duration: 0.3, delay: 0.5 + i * 0.05 }}
+                  style={{ width: `${65 + (i % 3) * 12}%`, originX: 0 }}
+                />
+              ))}
+            </div>
+          </motion.div>
+
+          {/* Front cover - opens with 3D rotation */}
+          <motion.div
+            className="absolute inset-0 rounded-r-md overflow-hidden will-change-transform"
+            style={{ 
+              transformOrigin: 'left center',
+              transformStyle: 'preserve-3d',
+              backfaceVisibility: 'hidden',
+            }}
+            initial={{ rotateY: 0 }}
+            animate={{ rotateY: isOpening ? -140 : 0 }}
+            transition={{ 
+              duration: 0.8, 
+              ease: [0.4, 0, 0.2, 1],
+            }}
+          >
+            {/* Cover background */}
+            <div className="absolute inset-0 bg-gradient-to-br from-[hsl(222_47%_18%)] via-[hsl(222_47%_14%)] to-[hsl(222_47%_10%)] border border-gold/30">
+              {/* Spine edge */}
+              <div className="absolute left-0 top-0 w-2.5 h-full bg-gradient-to-r from-gold/60 to-gold/40" />
+              
+              {/* Inner decorative frame */}
+              <div className="absolute inset-3 border border-gold/25 rounded-sm">
+                {/* Corner accents */}
+                <div className="absolute -top-px -left-px w-3 h-3 border-t border-l border-gold/50" />
+                <div className="absolute -top-px -right-px w-3 h-3 border-t border-r border-gold/50" />
+                <div className="absolute -bottom-px -left-px w-3 h-3 border-b border-l border-gold/50" />
+                <div className="absolute -bottom-px -right-px w-3 h-3 border-b border-r border-gold/50" />
+              </div>
+
+              {/* Center emblem */}
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="w-12 h-12 rounded-full border border-gold/40 flex items-center justify-center bg-gold/10">
+                  <svg 
+                    viewBox="0 0 24 24" 
+                    className="w-5 h-5 text-gold"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                  >
+                    <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
+                    <path d="M12 6v7M9 10h6" />
+                  </svg>
+                </div>
+              </div>
+
+              {/* Decorative lines */}
+              <div className="absolute top-5 left-5 right-5 h-px bg-gradient-to-r from-transparent via-gold/30 to-transparent" />
+              <div className="absolute bottom-5 left-5 right-5 h-px bg-gradient-to-r from-transparent via-gold/30 to-transparent" />
+            </div>
+
+            {/* Shine sweep */}
+            <motion.div
+              className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent -skew-x-12"
+              initial={{ x: '-150%' }}
+              animate={{ x: isOpening ? '250%' : '-150%' }}
+              transition={{ duration: 1.2, delay: 0.2, ease: 'easeInOut' }}
+            />
+          </motion.div>
+        </div>
+
+        {/* Title */}
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
+          className="mt-8 text-center"
+          initial={{ opacity: 0, y: 16 }}
           animate={{ 
-            opacity: animationPhase !== 'initial' ? 1 : 0, 
-            y: animationPhase !== 'initial' ? 0 : 20 
+            opacity: phase === 'opening' ? 1 : 0,
+            y: phase === 'opening' ? 0 : 16,
           }}
-          transition={{ duration: 0.5, delay: 0.6 }}
-          className="mt-10 text-center"
+          transition={{ duration: 0.4, delay: 0.5 }}
         >
-          <h1 className="font-display text-2xl font-semibold text-primary-foreground tracking-wide">
+          <h1 className="font-display text-xl font-semibold text-primary-foreground tracking-wide">
             SecureReader
           </h1>
-          <p className="mt-2 text-sm text-primary-foreground/50 font-sans italic">
+          <p className="mt-1.5 text-xs text-primary-foreground/50 italic">
             Your Protected Digital Library
           </p>
         </motion.div>
 
-        {/* Loading indicator */}
+        {/* Loading dots */}
         <motion.div
+          className="mt-6 flex gap-1.5"
           initial={{ opacity: 0 }}
-          animate={{ opacity: animationPhase === 'visible' ? 1 : 0 }}
-          transition={{ delay: 0.8, duration: 0.3 }}
-          className="mt-8"
+          animate={{ opacity: phase === 'opening' ? 1 : 0 }}
+          transition={{ delay: 0.7 }}
         >
-          <div className="flex gap-2">
-            {[0, 1, 2].map((i) => (
-              <motion.div
-                key={i}
-                className="w-1.5 h-1.5 rounded-full bg-gold/60"
-                animate={{
-                  scale: [1, 1.4, 1],
-                  opacity: [0.4, 1, 0.4],
-                }}
-                transition={{
-                  duration: 1.2,
-                  repeat: Infinity,
-                  delay: i * 0.2,
-                  ease: 'easeInOut',
-                }}
-              />
-            ))}
-          </div>
+          {[0, 1, 2].map((i) => (
+            <motion.div
+              key={i}
+              className="w-1.5 h-1.5 rounded-full bg-gold/50"
+              animate={{ opacity: [0.3, 1, 0.3] }}
+              transition={{ duration: 1, repeat: Infinity, delay: i * 0.15 }}
+            />
+          ))}
         </motion.div>
       </motion.div>
 
-      {/* Background overlay that fades in during zoom */}
+      {/* Fade overlay */}
       <motion.div
         className="absolute inset-0 bg-background pointer-events-none"
         initial={{ opacity: 0 }}
-        animate={{ 
-          opacity: animationPhase === 'zooming' ? 0.6 : animationPhase === 'fading' ? 1 : 0 
-        }}
-        transition={{ duration: 0.5 }}
+        animate={{ opacity: isExiting ? 1 : 0 }}
+        transition={{ duration: 0.4 }}
       />
     </motion.div>
   );
