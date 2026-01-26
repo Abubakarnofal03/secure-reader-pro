@@ -45,11 +45,15 @@ export default function SignupScreen() {
     }
 
     toast({
-      title: 'Welcome!',
-      description: 'Your account has been created. Start exploring our publications!',
+      title: 'Check your email!',
+      description: 'We\'ve sent you a confirmation link to verify your account.',
     });
 
-    navigate('/library', { replace: true });
+    // Redirect to confirmation pending screen with email
+    navigate('/confirm-email-pending', { 
+      replace: true, 
+      state: { email } 
+    });
   };
 
   return (
