@@ -135,12 +135,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [pendingDeviceConflict]);
 
   const signUp = async (email: string, password: string, name: string) => {
+    // Use the web auth callback page which will redirect to the app
+    const redirectUrl = `${window.location.origin}/auth-callback`;
+    
     const { error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        // Use deep link for mobile app email confirmation
-        emailRedirectTo: 'securereader://library',
+        emailRedirectTo: redirectUrl,
         data: { name }
       }
     });

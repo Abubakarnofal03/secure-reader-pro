@@ -18,6 +18,7 @@ import LoginScreen from "./pages/LoginScreen";
 import SignupScreen from "./pages/SignupScreen";
 import ForgotPasswordScreen from "./pages/ForgotPasswordScreen";
 import ResetPasswordScreen from "./pages/ResetPasswordScreen";
+import AuthCallbackPage from "./pages/AuthCallbackPage";
 import EmailConfirmationPendingScreen from "./pages/EmailConfirmationPendingScreen";
 import AccessPendingScreen from "./pages/AccessPendingScreen";
 import ContentListScreen from "./pages/ContentListScreen";
@@ -63,6 +64,7 @@ function AppContent() {
               <Route path="/signup" element={<SignupScreen />} />
               <Route path="/forgot-password" element={<ForgotPasswordScreen />} />
               <Route path="/reset-password" element={<ResetPasswordScreen />} />
+              <Route path="/auth-callback" element={<AuthCallbackPage />} />
               <Route path="/confirm-email-pending" element={<EmailConfirmationPendingScreen />} />
               <Route path="/access-pending" element={
                 <ProtectedRoute requireAccess={false}>
