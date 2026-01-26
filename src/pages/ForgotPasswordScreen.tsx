@@ -28,8 +28,9 @@ export default function ForgotPasswordScreen() {
 
     setIsLoading(true);
 
+    // Use the published URL for auth callback - this page will redirect to the app
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: 'securereader://reset-password',
+      redirectTo: `${window.location.origin}/auth-callback`,
     });
 
     setIsLoading(false);
