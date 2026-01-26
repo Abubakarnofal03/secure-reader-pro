@@ -16,6 +16,12 @@ const config: CapacitorConfig = {
       showSpinner: false,
       launchAutoHide: true,
     },
+    // Deep linking configuration
+    App: {
+      // URL schemes the app can handle
+      // Android: Handled via AndroidManifest.xml intent filters
+      // iOS: Handled via Info.plist URL Types
+    },
   },
   android: {
     // Android-specific security settings

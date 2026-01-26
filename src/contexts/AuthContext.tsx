@@ -139,7 +139,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       email,
       password,
       options: {
-        emailRedirectTo: window.location.origin,
+        // Use deep link for mobile app email confirmation
+        emailRedirectTo: 'securereader://library',
         data: { name }
       }
     });

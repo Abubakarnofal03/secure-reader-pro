@@ -8,6 +8,7 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { SessionInvalidatedDialog } from "@/components/SessionInvalidatedDialog";
 import { DeviceConflictDialog } from "@/components/DeviceConflictDialog";
 import { TermsAndConditionsDialog } from "@/components/TermsAndConditionsDialog";
+import { DeepLinkHandler } from "@/components/DeepLinkHandler";
 import { useTermsAcceptance } from "@/hooks/useTermsAcceptance";
 import { ThemeProvider } from "next-themes";
 import { LoadingScreen } from "@/components/LoadingScreen";
@@ -55,6 +56,7 @@ function AppContent() {
           <AuthProvider>
             <SessionInvalidatedDialog />
             <DeviceConflictDialog />
+            <DeepLinkHandler />
             <Routes>
               <Route path="/" element={<SplashScreen />} />
               <Route path="/login" element={<LoginScreen />} />

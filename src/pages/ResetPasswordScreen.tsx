@@ -27,29 +27,39 @@ export default function ResetPasswordScreen() {
       // The user should have a session if they clicked the reset link
       if (session) {
         setIsValidSession(true);
-      } else {
-        // Check URL for recovery token in hash
-        const hashParams = new URLSearchParams(window.location.hash.substring(1));
-        const accessToken = hashParams.get('access_token');
-        const type = hashParams.get('type');
+        return;
+      }
+      
+      // Check URL for recovery token in hash (web flow)
+      const hashParams = new URLSearchParams(window.location.hash.substring(1));
+      const accessToken = hashParams.get('access_token');
+      const type = hashParams.get('type');
+      
+      // Also check query params (deep link flow might use query params)
+      const searchParams = new URLSearchParams(window.location.search);
+      const queryToken = searchParams.get('access_token');
+      const queryType = searchParams.get('type');
+      
+      const token = accessToken || queryToken;
+      const tokenType = type || queryType;
+      
+      if (token && tokenType === 'recovery') {
+        // Set the session from the recovery token
+        const refreshToken = hashParams.get('refresh_token') || searchParams.get('refresh_token') || '';
+        const { error } = await supabase.auth.setSession({
+          access_token: token,
+          refresh_token: refreshToken,
+        });
         
-        if (accessToken && type === 'recovery') {
-          // Set the session from the recovery token
-          const { error } = await supabase.auth.setSession({
-            access_token: accessToken,
-            refresh_token: hashParams.get('refresh_token') || '',
-          });
-          
-          if (!error) {
-            setIsValidSession(true);
-            // Clean up the URL
-            window.history.replaceState({}, document.title, window.location.pathname);
-          } else {
-            setIsValidSession(false);
-          }
+        if (!error) {
+          setIsValidSession(true);
+          // Clean up the URL
+          window.history.replaceState({}, document.title, window.location.pathname);
         } else {
           setIsValidSession(false);
         }
+      } else {
+        setIsValidSession(false);
       }
     };
 
