@@ -15,6 +15,9 @@ import { LoadingScreen } from "@/components/LoadingScreen";
 import SplashScreen from "./pages/SplashScreen";
 import LoginScreen from "./pages/LoginScreen";
 import SignupScreen from "./pages/SignupScreen";
+import ForgotPasswordScreen from "./pages/ForgotPasswordScreen";
+import ResetPasswordScreen from "./pages/ResetPasswordScreen";
+import EmailConfirmationPendingScreen from "./pages/EmailConfirmationPendingScreen";
 import AccessPendingScreen from "./pages/AccessPendingScreen";
 import ContentListScreen from "./pages/ContentListScreen";
 import SecureReaderScreen from "./pages/SecureReaderScreen";
@@ -56,6 +59,9 @@ function AppContent() {
               <Route path="/" element={<SplashScreen />} />
               <Route path="/login" element={<LoginScreen />} />
               <Route path="/signup" element={<SignupScreen />} />
+              <Route path="/forgot-password" element={<ForgotPasswordScreen />} />
+              <Route path="/reset-password" element={<ResetPasswordScreen />} />
+              <Route path="/confirm-email-pending" element={<EmailConfirmationPendingScreen />} />
               <Route path="/access-pending" element={
                 <ProtectedRoute requireAccess={false}>
                   <AccessPendingScreen />
