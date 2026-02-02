@@ -1,12 +1,14 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { User, Library, Sparkles, RefreshCw, Store, BookOpen } from 'lucide-react';
+import { Library, Sparkles, RefreshCw } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { PurchaseDialog } from '@/components/library/PurchaseDialog';
 import { LibraryBookItem } from '@/components/library/LibraryBookItem';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import logo from '@/assets/logo.png';
 
 interface ContentItem {
   id: string;
@@ -155,80 +157,78 @@ export default function ContentListScreen() {
 
   const displayedContent = activeTab === 'my-books' ? myBooks : storeBooks;
 
-  // Medical caduceus icon for header
-  const CaduceusIcon = () => (
-    <svg viewBox="0 0 24 24" className="h-8 w-8 text-primary" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <path d="M12 2v20M12 2c-2 2-4 3-6 3 2 0 4 1 6 3-2-2-4-3-6-3 2 0 4-1 6-3z" />
-      <path d="M12 8c2-2 4-3 6-3-2 0-4 1-6 3 2 2 4 3 6 3-2 0-4-1-6-3z" />
-      <circle cx="12" cy="6" r="2" />
-    </svg>
-  );
+  // Get user initials for avatar
+  const getUserInitial = () => {
+    if (profile?.name) return profile.name.charAt(0).toUpperCase();
+    if (profile?.email) return profile.email.charAt(0).toUpperCase();
+    return 'U';
+  };
 
   return (
     <div className="flex min-h-screen flex-col bg-background safe-top safe-bottom">
       {/* Header */}
-      <header className="sticky top-0 z-10 bg-background border-b border-border/30">
-        <div className="px-5 py-4">
+      <header className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm">
+        <div className="px-6 py-5">
           <div className="flex items-center justify-between">
-            <div>
-              <h1 className="font-display text-xl font-bold text-foreground tracking-tight uppercase">
-                Medical Reference
-              </h1>
-              <h2 className="font-display text-xl font-bold text-foreground tracking-tight uppercase -mt-1">
-                Library
-              </h2>
+            {/* Brand */}
+            <div className="flex items-center gap-3">
+              <img src={logo} alt="Calorics" className="h-9 w-9 rounded-lg" />
+              <span className="text-xl font-semibold text-foreground tracking-tight">
+                Calorics
+              </span>
             </div>
-            <div className="flex items-center gap-2">
-              <CaduceusIcon />
+            
+            {/* Actions */}
+            <div className="flex items-center gap-1">
               <ThemeToggle />
               <button
                 onClick={() => navigate('/profile')}
-                className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted/50 transition-colors hover:bg-muted"
+                className="h-8 w-8 rounded-full transition-colors hover:bg-muted/50"
               >
-                <User className="h-4 w-4 text-muted-foreground" />
+                <Avatar className="h-8 w-8">
+                  <AvatarFallback className="bg-primary/10 text-primary text-xs font-medium">
+                    {getUserInitial()}
+                  </AvatarFallback>
+                </Avatar>
               </button>
             </div>
           </div>
         </div>
 
         {/* Tab Navigation */}
-        <div className="px-5 pb-3">
-          <div className="flex border-b border-border/50">
+        <div className="px-6">
+          <div className="flex gap-8">
             <button
               onClick={() => setActiveTab('my-books')}
-              className={`flex-1 pb-3 text-sm font-semibold uppercase tracking-wide transition-colors relative ${
+              className={`pb-3 text-sm font-medium transition-colors relative ${
                 activeTab === 'my-books'
                   ? 'text-foreground'
-                  : 'text-muted-foreground'
+                  : 'text-muted-foreground hover:text-foreground/70'
               }`}
             >
-              <span className="flex items-center justify-center gap-2">
-                <BookOpen className="h-4 w-4" />
-                My Resources
-              </span>
+              Library
               {activeTab === 'my-books' && (
                 <motion.div
                   layoutId="activeTab"
-                  className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary"
+                  className="absolute bottom-0 left-0 right-0 h-[1px] bg-foreground"
+                  transition={{ type: "spring", stiffness: 500, damping: 30 }}
                 />
               )}
             </button>
             <button
               onClick={() => setActiveTab('store')}
-              className={`flex-1 pb-3 text-sm font-semibold uppercase tracking-wide transition-colors relative ${
+              className={`pb-3 text-sm font-medium transition-colors relative ${
                 activeTab === 'store'
                   ? 'text-foreground'
-                  : 'text-muted-foreground'
+                  : 'text-muted-foreground hover:text-foreground/70'
               }`}
             >
-              <span className="flex items-center justify-center gap-2">
-                <Store className="h-4 w-4" />
-                Catalogue
-              </span>
+              Store
               {activeTab === 'store' && (
                 <motion.div
                   layoutId="activeTab"
-                  className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary"
+                  className="absolute bottom-0 left-0 right-0 h-[1px] bg-foreground"
+                  transition={{ type: "spring", stiffness: 500, damping: 30 }}
                 />
               )}
             </button>
