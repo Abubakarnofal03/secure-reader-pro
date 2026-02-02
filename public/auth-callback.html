@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MyCalorics - Email Verification</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    :root {
+      --background: hsl(80 20% 97%);
+      --foreground: hsl(80 10% 15%);
+      --primary: hsl(100 22% 55%);
+      --primary-10: hsl(100 22% 55% / 0.1);
+      --primary-foreground: hsl(0 0% 100%);
+      --muted: hsl(80 10% 45%);
+      --destructive: hsl(0 72% 50%);
+      --destructive-10: hsl(0 72% 50% / 0.1);
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background-color: var(--background);
+      color: var(--foreground);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    
+    .container {
+      width: 100%;
+      max-width: 380px;
+      text-align: center;
+    }
+    
+    .logo-wrapper {
+      width: 80px;
+      height: 80px;
+      margin: 0 auto 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background-color: var(--primary-10);
+      border-radius: 16px;
+    }
+    
+    .logo-wrapper.error {
+      background-color: var(--destructive-10);
+    }
+    
+    .logo {
+      width: 48px;
+      height: 48px;
+      object-fit: contain;
+    }
+    
+    .logo-placeholder {
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--primary);
+    }
+    
+    .logo-wrapper.error .logo-placeholder {
+      color: var(--destructive);
+    }
+    
+    h1 {
+      font-size: 24px;
+      font-weight: 600;
+      margin-bottom: 12px;
+      color: var(--foreground);
+    }
+    
+    .description {
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.5;
+      margin-bottom: 24px;
+    }
+    
+    .spinner-wrapper {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      color: var(--muted);
+    }
+    
+    .spinner {
+      width: 20px;
+      height: 20px;
+      border: 2px solid var(--primary);
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+      height: 48px;
+      padding: 0 24px;
+      font-size: 15px;
+      font-weight: 500;
+      color: var(--primary-foreground);
+      background-color: var(--primary);
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      text-decoration: none;
+      transition: opacity 0.2s;
+    }
+    
+    .button:hover {
+      opacity: 0.9;
+    }
+    
+    .button svg {
+      width: 16px;
+      height: 16px;
+    }
+    
+    .help-text {
+      margin-top: 16px;
+      font-size: 13px;
+      color: var(--muted);
+      opacity: 0.8;
+    }
+    
+    .footer {
+      margin-top: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--muted);
+      opacity: 0.7;
+    }
+    
+    .footer svg {
+      width: 14px;
+      height: 14px;
+    }
+    
+    .hidden {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Loading State -->
+    <div id="loading-state">
+      <div class="logo-wrapper">
+        <span class="logo-placeholder">MC</span>
+      </div>
+      <h1>Opening MyCalorics...</h1>
+      <div class="spinner-wrapper">
+        <div class="spinner"></div>
+        <span>Processing authentication...</span>
+      </div>
+    </div>
+    
+    <!-- Manual Redirect State -->
+    <div id="manual-state" class="hidden">
+      <div class="logo-wrapper">
+        <span class="logo-placeholder">MC</span>
+      </div>
+      <h1>Opening MyCalorics...</h1>
+      <p class="description">If the app didn't open automatically, tap the button below:</p>
+      <button class="button" id="open-app-btn">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+          <polyline points="15 3 21 3 21 9"/>
+          <line x1="10" y1="14" x2="21" y2="3"/>
+        </svg>
+        Open MyCalorics App
+      </button>
+      <p class="help-text">Make sure MyCalorics is installed on your device.</p>
+    </div>
+    
+    <!-- Error State -->
+    <div id="error-state" class="hidden">
+      <div class="logo-wrapper error">
+        <span class="logo-placeholder">!</span>
+      </div>
+      <h1>Authentication Error</h1>
+      <p class="description" id="error-message">Something went wrong. Please try again.</p>
+      <p class="help-text">Please request a new link from the app.</p>
+    </div>
+    
+    <div class="footer">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="5" y="2" width="14" height="20" rx="2" ry="2"/>
+        <line x1="12" y1="18" x2="12.01" y2="18"/>
+      </svg>
+      <span>Secure Authentication</span>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      var loadingState = document.getElementById('loading-state');
+      var manualState = document.getElementById('manual-state');
+      var errorState = document.getElementById('error-state');
+      var errorMessage = document.getElementById('error-message');
+      var openAppBtn = document.getElementById('open-app-btn');
+      
+      var deepLink = null;
+      
+      function showError(message) {
+        loadingState.classList.add('hidden');
+        manualState.classList.add('hidden');
+        errorState.classList.remove('hidden');
+        errorMessage.textContent = message;
+      }
+      
+      function showManual() {
+        loadingState.classList.add('hidden');
+        errorState.classList.add('hidden');
+        manualState.classList.remove('hidden');
+      }
+      
+      function buildDeepLink() {
+        var hash = window.location.hash;
+        
+        if (!hash || hash.length < 2) {
+          return null;
+        }
+        
+        var params = new URLSearchParams(hash.substring(1));
+        
+        // Check for errors
+        var errorCode = params.get('error_code');
+        var errorDesc = params.get('error_description');
+        
+        if (errorCode || errorDesc) {
+          showError(errorDesc || 'Authentication failed');
+          return null;
+        }
+        
+        var accessToken = params.get('access_token');
+        var refreshToken = params.get('refresh_token');
+        var type = params.get('type');
+        
+        // Determine destination path
+        var appPath = 'library';
+        if (type === 'recovery') {
+          appPath = 'reset-password';
+        }
+        
+        // Build deep link
+        var link = 'mycalorics://' + appPath;
+        
+        if (accessToken) {
+          var tokenParams = new URLSearchParams();
+          tokenParams.set('access_token', accessToken);
+          if (refreshToken) tokenParams.set('refresh_token', refreshToken);
+          if (type) tokenParams.set('type', type);
+          link += '?' + tokenParams.toString();
+        }
+        
+        return link;
+      }
+      
+      function attemptRedirect() {
+        deepLink = buildDeepLink();
+        
+        if (!deepLink) {
+          // Either error was shown or no tokens
+          if (!document.getElementById('error-state').classList.contains('hidden')) {
+            return;
+          }
+          showError('Invalid authentication link. Please request a new one.');
+          return;
+        }
+        
+        console.log('Attempting redirect to:', deepLink);
+        
+        // Try to redirect
+        window.location.href = deepLink;
+        
+        // After 2 seconds, show manual button if still on page
+        setTimeout(function() {
+          showManual();
+        }, 2000);
+      }
+      
+      // Manual open button handler
+      openAppBtn.addEventListener('click', function() {
+        if (deepLink) {
+          window.location.href = deepLink;
+        }
+      });
+      
+      // Start the redirect process
+      attemptRedirect();
+    })();
+  </script>
+</body>
+</html>
