@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
-import { Shield, Smartphone, ExternalLink } from 'lucide-react';
+import { Smartphone, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import logo from '@/assets/logo.png';
 
 /**
  * Minimal auth callback page that handles Supabase redirects.
@@ -22,7 +23,6 @@ export default function AuthCallbackPage() {
       try {
         // Get tokens from URL hash (Supabase uses hash for tokens)
         const hash = window.location.hash;
-        const searchParams = new URLSearchParams(window.location.search);
         
         // Parse hash parameters
         const hashParams = new URLSearchParams(hash.substring(1));
@@ -48,7 +48,7 @@ export default function AuthCallbackPage() {
         }
 
         // Build the deep link URL
-        let deepLinkUrl = `securereader://${appPath}`;
+        let deepLinkUrl = `mycalorics://${appPath}`;
         
         // Append tokens as query parameters for the app to use
         if (accessToken) {
@@ -87,19 +87,19 @@ export default function AuthCallbackPage() {
     const type = hashParams.get('type');
     
     let appPath = type === 'recovery' ? 'reset-password' : 'library';
-    window.location.href = `securereader://${appPath}${hash}`;
+    window.location.href = `mycalorics://${appPath}${hash}`;
   };
 
   if (error) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-slate-900 px-6 text-white">
+      <div className="flex min-h-screen flex-col items-center justify-center bg-background px-6">
         <div className="w-full max-w-sm text-center">
-          <div className="mb-6 flex h-20 w-20 mx-auto items-center justify-center rounded-2xl bg-red-500/20">
-            <Shield className="h-10 w-10 text-red-400" />
+          <div className="mb-6 flex h-20 w-20 mx-auto items-center justify-center rounded-2xl bg-destructive/10">
+            <img src={logo} alt="MyCalorics" className="h-12 w-auto" />
           </div>
-          <h1 className="text-2xl font-semibold mb-3">Authentication Error</h1>
-          <p className="text-slate-400 mb-6">{error}</p>
-          <p className="text-sm text-slate-500">
+          <h1 className="text-2xl font-semibold text-foreground mb-3">Authentication Error</h1>
+          <p className="text-muted-foreground mb-6">{error}</p>
+          <p className="text-sm text-muted-foreground/70">
             Please try again or request a new link from the app.
           </p>
         </div>
@@ -108,24 +108,24 @@ export default function AuthCallbackPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-slate-900 px-6 text-white">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-background px-6">
       <div className="w-full max-w-sm text-center">
-        <div className="mb-6 flex h-20 w-20 mx-auto items-center justify-center rounded-2xl bg-primary/20">
-          <Smartphone className="h-10 w-10 text-primary" />
+        <div className="mb-6 flex h-20 w-20 mx-auto items-center justify-center rounded-2xl bg-primary/10">
+          <img src={logo} alt="MyCalorics" className="h-12 w-auto" />
         </div>
         
-        <h1 className="text-2xl font-semibold mb-3">
-          Opening SecureReader...
+        <h1 className="text-2xl font-semibold text-foreground mb-3">
+          Opening MyCalorics...
         </h1>
         
         {!redirectAttempted ? (
-          <div className="flex items-center justify-center gap-2 text-slate-400">
+          <div className="flex items-center justify-center gap-2 text-muted-foreground">
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
             <span>Processing authentication...</span>
           </div>
         ) : (
           <div className="space-y-4">
-            <p className="text-slate-400">
+            <p className="text-muted-foreground">
               If the app didn't open automatically, tap the button below:
             </p>
             
@@ -134,17 +134,17 @@ export default function AuthCallbackPage() {
               className="w-full h-12 rounded-xl gap-2"
             >
               <ExternalLink className="h-4 w-4" />
-              Open SecureReader App
+              Open MyCalorics App
             </Button>
             
-            <p className="text-xs text-slate-500 mt-4">
-              Make sure SecureReader is installed on your device.
+            <p className="text-xs text-muted-foreground/70 mt-4">
+              Make sure MyCalorics is installed on your device.
             </p>
           </div>
         )}
 
-        <div className="mt-8 flex items-center justify-center gap-2 text-xs text-slate-500">
-          <Shield className="h-3.5 w-3.5" />
+        <div className="mt-8 flex items-center justify-center gap-2 text-xs text-muted-foreground/70">
+          <Smartphone className="h-3.5 w-3.5" />
           <span>Secure Authentication</span>
         </div>
       </div>

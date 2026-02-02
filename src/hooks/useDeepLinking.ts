@@ -2,10 +2,12 @@ import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { App, URLOpenListenerEvent } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
+import { supabase } from '@/integrations/supabase/client';
 
 /**
  * Hook to handle deep links in the native app.
  * Listens for app URL open events and navigates to the appropriate route.
+ * Also handles session establishment from auth tokens in deep links.
  */
 export function useDeepLinking() {
   const navigate = useNavigate();
@@ -16,14 +18,14 @@ export function useDeepLinking() {
       return;
     }
 
-    const handleDeepLink = (event: URLOpenListenerEvent) => {
+    const handleDeepLink = async (event: URLOpenListenerEvent) => {
       console.log('Deep link received:', event.url);
 
       try {
         const url = new URL(event.url);
         
         // Handle different URL formats:
-        // 1. Custom scheme: securereader://reset-password?token=...
+        // 1. Custom scheme: mycalorics://reset-password?token=...
         // 2. Universal link: https://yourdomain.com/reset-password#access_token=...
         
         let pathname = url.pathname;
@@ -31,20 +33,40 @@ export function useDeepLinking() {
         let search = url.search;
 
         // For custom URL schemes, the host might be the path
-        if (url.protocol === 'securereader:') {
+        if (url.protocol === 'mycalorics:') {
           pathname = '/' + url.host + url.pathname;
         }
 
+        // Extract tokens from search params (sent by AuthCallbackPage)
+        const accessToken = url.searchParams.get('access_token');
+        const refreshToken = url.searchParams.get('refresh_token');
+        const type = url.searchParams.get('type');
+
+        // If we have tokens, establish the Supabase session
+        if (accessToken && refreshToken) {
+          console.log('Setting session from deep link tokens...');
+          const { error } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken
+          });
+          
+          if (error) {
+            console.error('Failed to set session from deep link:', error);
+          } else {
+            console.log('Session established from deep link');
+          }
+        }
+
         // Handle password reset links
-        if (pathname.includes('reset-password')) {
+        if (pathname.includes('reset-password') || type === 'recovery') {
           // Navigate with hash preserved for token extraction
           navigate(`/reset-password${hash}${search}`);
           return;
         }
 
         // Handle email confirmation links
-        if (pathname.includes('confirm') || url.searchParams.get('type') === 'signup') {
-          // The auth state listener will handle the session
+        if (pathname.includes('confirm') || type === 'signup' || type === 'email') {
+          // Session is already established above, navigate to library
           navigate('/library');
           return;
         }
@@ -56,9 +78,12 @@ export function useDeepLinking() {
           return;
         }
 
-        // Default: navigate to the path
+        // Default: navigate to the path (usually /library after auth)
         if (pathname && pathname !== '/') {
-          navigate(pathname + search + hash);
+          navigate(pathname);
+        } else {
+          // Default to library if no specific path
+          navigate('/library');
         }
       } catch (error) {
         console.error('Error handling deep link:', error);
