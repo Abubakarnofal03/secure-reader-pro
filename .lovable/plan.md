@@ -1,120 +1,110 @@
 
-# Email Verification Bridge Page Implementation
+
+# Standalone Auth Bridge Page for Vercel
 
 ## Overview
-Update the authentication flow to use `mycalorics://` URL scheme and MyCalorics branding. The bridge page will work with any hosting (Vercel default subdomain, custom domain, or Lovable preview URL).
+Create a **completely standalone, single-file HTML page** that can be deployed to Vercel independently of the main app. This page handles email verification and password reset redirects without any React, build tools, or external dependencies.
 
-## Production Architecture
+## Why a Standalone HTML File?
+
+The current `AuthCallbackPage.tsx` uses:
+- React and JSX
+- Capacitor (native platform detection)
+- Tailwind CSS classes
+- Local logo import
+- shadcn/ui Button component
+
+For Vercel deployment, you'd need to either deploy the entire React app or create a completely standalone page. A **single HTML file** is the cleanest solution:
+
+| Approach | Pros | Cons |
+|----------|------|------|
+| Deploy entire app | Uses existing code | Exposes all routes, large bundle |
+| Standalone HTML file | Tiny, fast, no build step | Duplicates styling |
+
+## What I'll Create
+
+A new file `public/auth-callback.html` - a single, self-contained HTML page with:
+
+- **Inline CSS** matching MyCalorics branding (sage green, warm taupe)
+- **Inline JavaScript** for token parsing and deep link redirect
+- **Base64-encoded logo** or hosted logo URL
+- **No external dependencies** (no React, no Tailwind, no npm)
+
+## File Structure for Vercel
 
 ```text
-┌─────────────────────────────────────────────────────────────────┐
-│  User clicks email verification link                            │
-│  (e.g., mycalorics.vercel.app/auth-callback#access_token=...)  │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  Web Bridge Page (AuthCallbackPage)                             │
-│  ──────────────────────────────────────────────────────────     │
-│  1. Shows MyCalorics branded loading screen                     │
-│  2. Parses tokens from URL hash                                 │
-│  3. Redirects to: mycalorics://library?access_token=...         │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  Native App (Android/iOS)                                       │
-│  ──────────────────────────────────────────────────────────     │
-│  1. Receives deep link via intent filter                        │
-│  2. Extracts access_token and refresh_token                     │
-│  3. Calls supabase.auth.setSession() to establish session       │
-│  4. Navigates to /library - user is now verified & logged in    │
-└─────────────────────────────────────────────────────────────────┘
+vercel-auth-bridge/
+├── index.html          ← The standalone auth page
+├── vercel.json         ← Route configuration
+└── logo.png            ← MyCalorics logo
 ```
 
----
+When deployed to Vercel, visiting `mycalorics.vercel.app/` will show the auth page.
 
-## Files to Modify
+## The Standalone Page Will Handle
 
-| File | Changes |
-|------|---------|
-| `android/app/src/main/AndroidManifest.xml` | Change URL scheme from `securereader` to `mycalorics` |
-| `src/pages/AuthCallbackPage.tsx` | Update all `securereader://` references to `mycalorics://`, rebrand UI |
-| `src/hooks/useDeepLinking.ts` | Update protocol check from `securereader:` to `mycalorics:`, add session establishment |
+1. **Email Verification** (`type=signup` or `type=email`)
+   - Redirects to `mycalorics://library?access_token=...`
+   
+2. **Password Reset** (`type=recovery`)
+   - Redirects to `mycalorics://reset-password?access_token=...`
+   
+3. **Error States**
+   - Shows branded error message if authentication failed
+   
+4. **Manual Fallback**
+   - "Open MyCalorics App" button if auto-redirect doesn't work
 
----
+## Implementation Details
 
-## Detailed Changes
-
-### 1. Android Manifest - Update URL Scheme
-
-Change line 30 from:
-```xml
-<data android:scheme="securereader" />
-```
-To:
-```xml
-<data android:scheme="mycalorics" />
-```
-
-### 2. AuthCallbackPage - Rebrand & Update Scheme
-
-**URL Scheme Updates:**
-- Line 51: `securereader://${appPath}` → `mycalorics://${appPath}`
-- Line 90: `securereader://${appPath}${hash}` → `mycalorics://${appPath}${hash}`
-
-**Branding Updates:**
-- Replace "SecureReader" with "MyCalorics" in all text
-- Update colors to match MyCalorics theme (warm sage green instead of slate)
-- Add the MyCalorics logo
-- Update button text and helper messages
-
-### 3. Deep Link Handler - Add Session Establishment
-
-**Protocol Update:**
-- Line 34: `securereader:` → `mycalorics:`
-
-**Add Token Extraction & Session Setup:**
-When the app receives a deep link with tokens, extract them and establish the Supabase session:
-```typescript
-// Extract tokens from URL search params
-const accessToken = url.searchParams.get('access_token');
-const refreshToken = url.searchParams.get('refresh_token');
-
-if (accessToken && refreshToken) {
-  await supabase.auth.setSession({
-    access_token: accessToken,
-    refresh_token: refreshToken
-  });
+### Inline Styles (matches current theme)
+```css
+:root {
+  --background: hsl(80 20% 97%);
+  --foreground: hsl(80 10% 15%);
+  --primary: hsl(100 22% 55%);
+  --primary-10: hsl(100 22% 55% / 0.1);
+  --muted: hsl(80 10% 35%);
+  --destructive-10: hsl(0 72% 50% / 0.1);
 }
 ```
 
----
+### Token Parsing Logic
+```javascript
+const hash = window.location.hash;
+const params = new URLSearchParams(hash.substring(1));
+const accessToken = params.get('access_token');
+const refreshToken = params.get('refresh_token');
+const type = params.get('type');
+```
 
-## What You'll Need to Do After Implementation
+### Deep Link Construction
+```javascript
+const appPath = type === 'recovery' ? 'reset-password' : 'library';
+let deepLink = `mycalorics://${appPath}`;
+if (accessToken) {
+  const tokenParams = new URLSearchParams();
+  tokenParams.set('access_token', accessToken);
+  if (refreshToken) tokenParams.set('refresh_token', refreshToken);
+  if (type) tokenParams.set('type', type);
+  deepLink += '?' + tokenParams.toString();
+}
+window.location.href = deepLink;
+```
 
-### For Testing (Development)
-1. Export to GitHub and pull the changes
-2. Run `npx cap sync android` to update native project
-3. Rebuild the Android app in Android Studio
-4. Configure Supabase redirect URL to Lovable preview URL
+## Files I'll Create
 
-### For Production (Vercel)
-1. Deploy the AuthCallbackPage to Vercel (can be the minimal standalone version)
-2. In Lovable Cloud backend settings, update:
-   - **Site URL**: `https://mycalorics.vercel.app` (or your Vercel subdomain)
-   - **Redirect URLs**: Add `https://mycalorics.vercel.app/auth-callback`
+| File | Purpose |
+|------|---------|
+| `public/auth-callback.html` | Standalone auth bridge page (can be copied to Vercel project) |
 
----
+This approach gives you a **ready-to-deploy file** that you can simply copy to a new Vercel project folder and deploy with zero configuration.
 
-## Vercel Deployment Note
+## Deployment Steps (After Implementation)
 
-When you deploy to Vercel, you'll host **only the AuthCallbackPage** - it's a lightweight bridge that:
-- Shows a branded loading screen
-- Captures the auth tokens from Supabase
-- Redirects to your native app
-
-The rest of your app stays secure inside the native mobile app, never exposed on the web.
-just make sure i will be able to deploy that single page to vercel easily.
-
+1. Create a new folder on your computer
+2. Copy `auth-callback.html` → rename to `index.html`
+3. Copy the logo.png file
+4. Run `vercel` in that folder (or drag to Vercel dashboard)
+5. Update Supabase redirect URLs to your Vercel URL
 
