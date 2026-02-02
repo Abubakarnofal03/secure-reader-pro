@@ -172,7 +172,7 @@ export default function ContentListScreen() {
           <div className="flex items-center justify-between">
             {/* Brand */}
             <div className="flex items-center gap-3">
-              <img src={logo} alt="Calorics" className="h-9 w-9 rounded-lg" />
+              <img src={logo} alt="Calorics" className="h-11 w-11" />
               <span className="text-xl font-semibold text-foreground tracking-tight">
                 Calorics
               </span>
