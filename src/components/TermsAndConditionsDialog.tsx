@@ -96,12 +96,12 @@ export function TermsAndConditionsDialog({
                     exclusive intellectual property of <strong>Dr. Hafiz Muhammad Usama Zuhair</strong> and 
                     are associated with{' '}
                     <a 
-                      href="https://mycalories.com" 
+                      href="https://mycalorics.com" 
                       target="_blank" 
                       rel="noopener noreferrer"
                       className="text-primary underline underline-offset-2 inline-flex items-center gap-1 hover:text-primary/80 transition-colors"
                     >
-                      mycalories.com
+                      mycalorics.com
                       <ExternalLink className="h-3 w-3" />
                     </a>
                     . Unauthorized reproduction, distribution, or commercial use of any content is 
@@ -194,7 +194,7 @@ export function TermsAndConditionsDialog({
                 <section>
                   <h4 className="font-display font-semibold mb-2">9. Limitation of Liability</h4>
                   <p className="text-muted-foreground">
-                    In no event shall Dr. Hafiz Muhammad Usama Zuhair or mycalories.com be liable for 
+                    In no event shall Dr. Hafiz Muhammad Usama Zuhair or mycalorics.com be liable for 
                     any indirect, incidental, special, consequential, or punitive damages arising from 
                     your use of or inability to use the application.
                   </p>
@@ -213,12 +213,12 @@ export function TermsAndConditionsDialog({
                   <p className="text-muted-foreground">
                     For any questions regarding these terms, please contact us through{' '}
                     <a 
-                      href="https://mycalories.com" 
+                      href="https://mycalorics.com" 
                       target="_blank" 
                       rel="noopener noreferrer"
                       className="text-primary underline underline-offset-2"
                     >
-                      mycalories.com
+                      mycalorics.com
                     </a>
                     .
                   </p>
