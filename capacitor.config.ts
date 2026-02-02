@@ -1,8 +1,8 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.securereader.app',
-  appName: 'SecureReader',
+  appId: 'com.mycalorics.app',
+  appName: 'MyCalorics',
   webDir: 'dist',
   server: {
     // For production builds, remove the URL to use bundled assets

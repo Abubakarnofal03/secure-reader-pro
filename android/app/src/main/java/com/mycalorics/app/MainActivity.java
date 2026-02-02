@@ -1,4 +1,4 @@
-package com.securereader.app;
+package com.mycalorics.app;
 
 import com.getcapacitor.BridgeActivity;
 
