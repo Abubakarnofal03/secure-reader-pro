@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
+import logo from '@/assets/logo.png';
 
 export default function SplashScreen() {
   const navigate = useNavigate();
@@ -135,21 +136,13 @@ export default function SplashScreen() {
                 <div className="absolute -bottom-px -right-px w-3 h-3 border-b border-r border-gold/50" />
               </div>
 
-              {/* Center emblem */}
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="w-12 h-12 rounded-full border border-gold/40 flex items-center justify-center bg-gold/10">
-                  <svg 
-                    viewBox="0 0 24 24" 
-                    className="w-5 h-5 text-gold"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                  >
-                    <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
-                    <path d="M12 6v7M9 10h6" />
-                  </svg>
-                </div>
+              {/* Center logo */}
+              <div className="absolute inset-0 flex items-center justify-center p-4">
+                <img 
+                  src={logo} 
+                  alt="MyCalorics" 
+                  className="w-16 h-16 object-contain"
+                />
               </div>
 
               {/* Decorative lines */}
