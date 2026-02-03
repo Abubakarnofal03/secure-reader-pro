@@ -2,6 +2,6 @@
 <resources>
     <string name="app_name">MyCalorics</string>
     <string name="title_activity_main">MyCalorics</string>
-    <string name="package_name">com.securereader.app</string>
-    <string name="custom_url_scheme">mycalorics</string>
+    <string name="package_name">com.mycalorics.app</string>
+    <string name="custom_url_scheme">com.mycalorics.app</string>
 </resources>
