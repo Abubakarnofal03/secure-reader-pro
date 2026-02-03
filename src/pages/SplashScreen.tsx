@@ -102,7 +102,7 @@ export default function SplashScreen() {
               <img 
                 src={logo} 
                 alt="MyCalorics" 
-                className="w-14 h-14 object-contain opacity-60"
+                className="w-20 h-20 object-contain opacity-70"
               />
             </motion.div>
           </motion.div>
@@ -137,11 +137,11 @@ export default function SplashScreen() {
               </div>
 
               {/* Center logo */}
-              <div className="absolute inset-0 flex items-center justify-center p-4">
+              <div className="absolute inset-0 flex items-center justify-center p-2">
                 <img 
                   src={logo} 
                   alt="MyCalorics" 
-                  className="w-16 h-16 object-contain"
+                  className="w-20 h-20 object-contain"
                 />
               </div>
 
