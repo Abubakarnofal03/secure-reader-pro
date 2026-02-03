@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { X, Loader2, AlertTriangle, ZoomIn, ZoomOut, Menu, BookOpen, RefreshCw } from 'lucide-react';
+import { X, Loader2, AlertTriangle, ZoomIn, ZoomOut, Menu, BookOpen, RefreshCw, StickyNote, Highlighter } from 'lucide-react';
 import { Document, pdfjs } from 'react-pdf';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -12,6 +12,8 @@ import { ScrollProgressBar } from '@/components/reader/ScrollProgressBar';
 import { FloatingPageIndicator } from '@/components/reader/FloatingPageIndicator';
 import { TableOfContents } from '@/components/reader/TableOfContents';
 import { VirtualizedPdfViewer, VirtualizedPdfViewerApi } from '@/components/reader/VirtualizedPdfViewer';
+import { NotesPanel } from '@/components/reader/NotesPanel';
+import { HighlightColorPicker } from '@/components/reader/HighlightColorPicker';
 import { Progress } from '@/components/ui/progress';
 import { getDeviceId } from '@/lib/device';
 import { useSecurityMonitor } from '@/hooks/useSecurityMonitor';
@@ -23,7 +25,10 @@ import { usePdfOutline, OutlineItem } from '@/hooks/usePdfOutline';
 import { useSignedUrlRefresh } from '@/hooks/useSignedUrlRefresh';
 import { useSegmentManager } from '@/hooks/useSegmentManager';
 import { useSessionRecovery } from '@/hooks/useSessionRecovery';
+import { useUserNotes } from '@/hooks/useUserNotes';
+import { useUserHighlights, HighlightColor } from '@/hooks/useUserHighlights';
 import { ExtractedToc } from '@/lib/pdfTocExtractor';
+import { HIGHLIGHT_COLORS } from '@/hooks/useUserHighlights';
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
@@ -75,12 +80,15 @@ export default function SecureReaderScreen() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [pdfDocument, setPdfDocument] = useState<any>(null);
   const [showToc, setShowToc] = useState(false);
+  const [showNotesPanel, setShowNotesPanel] = useState(false);
   const [contentCategory, setContentCategory] = useState<string | null>(null);
   const [isLegacyContent, setIsLegacyContent] = useState(false);
   const [isJumpingToPage, setIsJumpingToPage] = useState(false);
   const [jumpTargetPage, setJumpTargetPage] = useState<number | null>(null);
   const [storedToc, setStoredToc] = useState<ExtractedToc | null>(null);
   const [isRecoveringSession, setIsRecoveringSession] = useState(false);
+  const [isHighlightMode, setIsHighlightMode] = useState(false);
+  const [highlightColor, setHighlightColor] = useState<HighlightColor>('yellow');
   
   // Store the PDF URL in a ref so refreshes don't trigger re-renders
   const pdfUrlRef = useRef<string | null>(null);
@@ -145,6 +153,30 @@ export default function SecureReaderScreen() {
   useEffect(() => {
     setIsRecoveringSession(isSessionRecovering);
   }, [isSessionRecovering]);
+
+  // User notes hook
+  const {
+    notes,
+    pagesWithNotes,
+    isLoading: isNotesLoading,
+    isSaving: isNotesSaving,
+    addNote,
+    updateNote,
+    deleteNote,
+    getNotesForPage,
+  } = useUserNotes({ contentId: id, enabled: hasAccess });
+
+  // User highlights hook
+  const {
+    highlights,
+    highlightsByPage,
+    pagesWithHighlights,
+    isLoading: isHighlightsLoading,
+    isSaving: isHighlightsSaving,
+    addHighlight,
+    deleteHighlight,
+    getHighlightsForPage,
+  } = useUserHighlights({ contentId: id, enabled: hasAccess });
 
   const {
     savedProgress,
@@ -683,6 +715,20 @@ export default function SecureReaderScreen() {
         category={contentCategory || undefined}
       />
 
+      {/* Notes Panel */}
+      <NotesPanel
+        isOpen={showNotesPanel}
+        onClose={() => setShowNotesPanel(false)}
+        notes={notes}
+        currentPage={currentPage}
+        onNavigate={goToPage}
+        onAddNote={addNote}
+        onUpdateNote={updateNote}
+        onDeleteNote={deleteNote}
+        isLoading={isNotesLoading}
+        isSaving={isNotesSaving}
+      />
+
       {/* Premium Reader Header */}
       <header className="sticky top-0 z-30 glass border-b border-border/50 px-2 sm:px-4 py-2 sm:py-3">
         <div className="flex items-center justify-between gap-1 sm:gap-2">
@@ -695,6 +741,43 @@ export default function SecureReaderScreen() {
             >
               <Menu className="h-4 w-4 sm:h-5 sm:w-5 text-foreground" />
             </button>
+            <button
+              onClick={() => setShowNotesPanel(true)}
+              className="relative flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl hover:bg-secondary transition-colors"
+              title="Notes"
+            >
+              <StickyNote className="h-4 w-4 sm:h-5 sm:w-5 text-foreground" />
+              {notes.length > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 h-4 w-4 rounded-full bg-primary text-[9px] font-bold text-primary-foreground flex items-center justify-center">
+                  {notes.length > 9 ? '9+' : notes.length}
+                </span>
+              )}
+            </button>
+            <HighlightColorPicker
+              selectedColor={highlightColor}
+              onColorChange={setHighlightColor}
+            >
+              <button
+                onClick={() => setIsHighlightMode(!isHighlightMode)}
+                className={`
+                  flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl transition-colors
+                  ${isHighlightMode 
+                    ? 'bg-primary text-primary-foreground' 
+                    : 'hover:bg-secondary'
+                  }
+                `}
+                title={isHighlightMode ? 'Exit Highlight Mode (click to pick color)' : 'Highlight Mode'}
+              >
+                <Highlighter 
+                  className="h-4 w-4 sm:h-5 sm:w-5" 
+                  style={{ 
+                    color: isHighlightMode 
+                      ? undefined 
+                      : HIGHLIGHT_COLORS[highlightColor].border 
+                  }}
+                />
+              </button>
+            </HighlightColorPicker>
             <button
               onClick={handleClose}
               className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl hover:bg-secondary transition-colors"
@@ -745,6 +828,23 @@ export default function SecureReaderScreen() {
         </div>
       </header>
 
+      {/* Highlight Mode Indicator */}
+      {isHighlightMode && (
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 rounded-full bg-card/95 backdrop-blur-sm px-4 py-2 shadow-lg border border-border">
+          <div 
+            className="w-3 h-3 rounded-full" 
+            style={{ backgroundColor: HIGHLIGHT_COLORS[highlightColor].border }}
+          />
+          <span className="text-xs font-medium text-foreground">Highlight Mode</span>
+          <button
+            onClick={() => setIsHighlightMode(false)}
+            className="ml-1 text-xs text-muted-foreground hover:text-foreground"
+          >
+            Exit
+          </button>
+        </div>
+      )}
+
       {/* PDF Viewer */}
       <main 
         ref={contentRef}
@@ -790,9 +890,16 @@ export default function SecureReaderScreen() {
                 getSegmentForPage={getSegmentForPage}
                 isLoadingSegment={isLoadingSegment}
                 legacyMode={false}
-              onReady={handleViewerReady}
-            />
-          )}
+                onReady={handleViewerReady}
+                getHighlightsForPage={getHighlightsForPage}
+                getNotesForPage={getNotesForPage}
+                isHighlightMode={isHighlightMode}
+                highlightColor={highlightColor}
+                onAddHighlight={addHighlight}
+                onDeleteHighlight={deleteHighlight}
+                onOpenNotesPanel={() => setShowNotesPanel(true)}
+              />
+            )}
           
           {/* Loading segments state for segmented content */}
           {!isLegacyContent && !isSegmented && content && isLoadingSegments && (
@@ -830,6 +937,13 @@ export default function SecureReaderScreen() {
                   scrollContainerRef={scrollContainerRef}
                   legacyMode={true}
                   onReady={handleViewerReady}
+                  getHighlightsForPage={getHighlightsForPage}
+                  getNotesForPage={getNotesForPage}
+                  isHighlightMode={isHighlightMode}
+                  highlightColor={highlightColor}
+                  onAddHighlight={addHighlight}
+                  onDeleteHighlight={deleteHighlight}
+                  onOpenNotesPanel={() => setShowNotesPanel(true)}
                 />
               )}
             </Document>

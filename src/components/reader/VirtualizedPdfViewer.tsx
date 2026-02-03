@@ -4,6 +4,11 @@ import { Document, Page, pdfjs } from 'react-pdf';
 import { Loader2, AlertTriangle } from 'lucide-react';
 import { useSegmentDocumentCache } from '@/hooks/useSegmentDocumentCache';
 import { PageSeparator } from './PageSeparator';
+import { HighlightOverlay } from './HighlightOverlay';
+import { HighlightDrawingLayer } from './HighlightDrawingLayer';
+import { NoteIndicator } from './NoteIndicator';
+import { UserHighlight, HighlightColor } from '@/hooks/useUserHighlights';
+import { UserNote } from '@/hooks/useUserNotes';
 
 // Import react-pdf layer styles for proper text/annotation rendering
 import 'react-pdf/dist/Page/TextLayer.css';
@@ -45,6 +50,21 @@ interface VirtualizedPdfViewerProps {
   onReady?: (api: VirtualizedPdfViewerApi) => void;
   // Total pages for page separator display
   totalPages?: number;
+  // Highlight and notes props
+  getHighlightsForPage?: (pageNumber: number) => UserHighlight[];
+  getNotesForPage?: (pageNumber: number) => UserNote[];
+  isHighlightMode?: boolean;
+  highlightColor?: HighlightColor;
+  onAddHighlight?: (
+    pageNumber: number,
+    xPercent: number,
+    yPercent: number,
+    widthPercent: number,
+    heightPercent: number,
+    color?: HighlightColor
+  ) => Promise<UserHighlight | null>;
+  onDeleteHighlight?: (highlightId: string) => Promise<boolean>;
+  onOpenNotesPanel?: () => void;
 }
 
 // Segmented page component - renders a page from a specific segment
@@ -59,6 +79,13 @@ const SegmentedPdfPage = memo(({
   totalPages,
   onLoadError,
   onPageRendered,
+  highlights,
+  noteCount,
+  isHighlightMode,
+  highlightColor,
+  onHighlightCreated,
+  onDeleteHighlight,
+  onNoteClick,
 }: { 
   globalPageNumber: number;
   segment: { segment_index: number; start_page: number; end_page: number };
@@ -69,6 +96,19 @@ const SegmentedPdfPage = memo(({
   totalPages: number;
   onLoadError?: (segmentIndex: number) => void;
   onPageRendered?: (pageNumber: number, height: number) => void;
+  highlights: UserHighlight[];
+  noteCount: number;
+  isHighlightMode: boolean;
+  highlightColor: HighlightColor;
+  onHighlightCreated?: (
+    pageNumber: number,
+    xPercent: number,
+    yPercent: number,
+    widthPercent: number,
+    heightPercent: number
+  ) => void;
+  onDeleteHighlight?: (highlightId: string) => void;
+  onNoteClick?: () => void;
 }) => {
   const pageRef = useRef<HTMLDivElement>(null);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -150,52 +190,83 @@ const SegmentedPdfPage = memo(({
       className="flex flex-col items-center"
       style={{ width: scaledWidth }}
     >
-      <Document
-        file={cachedUrl}
-        loading={null}
-        error={null}
-        onLoadError={handleLoadError}
-        options={pdfOptions}
-      >
-        <Page
-          pageNumber={localPageNumber}
-          width={scaledWidth}
-          renderTextLayer={true}
-          renderAnnotationLayer={true}
-          className="shadow-[var(--shadow-lg)] rounded-sm pdf-page-secure"
-          onRenderSuccess={handleRenderSuccess}
-          loading={
-            <div 
-              className="flex items-center justify-center bg-muted/30 rounded-sm"
-              style={{ width: scaledWidth, height: estimatedHeight }}
-            >
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            </div>
-          }
-          error={
-            <div 
-              className="flex items-center justify-center bg-destructive/10 rounded-sm"
-              style={{ width: scaledWidth, height: estimatedHeight }}
-            >
-              <AlertTriangle className="h-5 w-5 text-destructive mr-2" />
-              <span className="text-xs text-destructive">Failed to load page</span>
-            </div>
-          }
+      {/* Page container with overlays */}
+      <div className="relative">
+        <Document
+          file={cachedUrl}
+          loading={null}
+          error={null}
+          onLoadError={handleLoadError}
+          options={pdfOptions}
+        >
+          <Page
+            pageNumber={localPageNumber}
+            width={scaledWidth}
+            renderTextLayer={true}
+            renderAnnotationLayer={true}
+            className="shadow-[var(--shadow-lg)] rounded-sm pdf-page-secure"
+            onRenderSuccess={handleRenderSuccess}
+            loading={
+              <div 
+                className="flex items-center justify-center bg-muted/30 rounded-sm"
+                style={{ width: scaledWidth, height: estimatedHeight }}
+              >
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            }
+            error={
+              <div 
+                className="flex items-center justify-center bg-destructive/10 rounded-sm"
+                style={{ width: scaledWidth, height: estimatedHeight }}
+              >
+                <AlertTriangle className="h-5 w-5 text-destructive mr-2" />
+                <span className="text-xs text-destructive">Failed to load page</span>
+              </div>
+            }
+          />
+        </Document>
+        
+        {/* Note indicator */}
+        <NoteIndicator noteCount={noteCount} onClick={onNoteClick} />
+        
+        {/* Highlight overlay - render saved highlights */}
+        <HighlightOverlay
+          highlights={highlights}
+          pageWidth={scaledWidth}
+          pageHeight={estimatedHeight}
+          onDeleteHighlight={onDeleteHighlight}
+          isHighlightMode={isHighlightMode}
         />
-      </Document>
+        
+        {/* Highlight drawing layer - for creating new highlights */}
+        {isHighlightMode && (
+          <HighlightDrawingLayer
+            pageNumber={globalPageNumber}
+            pageWidth={scaledWidth}
+            pageHeight={estimatedHeight}
+            selectedColor={highlightColor}
+            onHighlightCreated={(page, x, y, w, h) => onHighlightCreated?.(page, x, y, w, h)}
+            enabled={isHighlightMode}
+          />
+        )}
+      </div>
+      
       {/* Page separator */}
       <PageSeparator pageNumber={globalPageNumber} totalPages={totalPages} />
     </div>
   );
 }, (prevProps, nextProps) => {
   // Only re-render if essential props change
-  // IMPORTANT: cachedUrl should be STABLE once loaded, so this rarely triggers
   return prevProps.globalPageNumber === nextProps.globalPageNumber && 
          prevProps.scaledWidth === nextProps.scaledWidth &&
          prevProps.estimatedHeight === nextProps.estimatedHeight &&
          prevProps.cachedUrl === nextProps.cachedUrl &&
          prevProps.totalPages === nextProps.totalPages &&
-         prevProps.segment.segment_index === nextProps.segment.segment_index;
+         prevProps.segment.segment_index === nextProps.segment.segment_index &&
+         prevProps.highlights === nextProps.highlights &&
+         prevProps.noteCount === nextProps.noteCount &&
+         prevProps.isHighlightMode === nextProps.isHighlightMode &&
+         prevProps.highlightColor === nextProps.highlightColor;
 });
 
 SegmentedPdfPage.displayName = 'SegmentedPdfPage';
@@ -208,6 +279,13 @@ const LegacyPdfPage = memo(({
   registerPage,
   totalPages,
   onPageRendered,
+  highlights,
+  noteCount,
+  isHighlightMode,
+  highlightColor,
+  onHighlightCreated,
+  onDeleteHighlight,
+  onNoteClick,
 }: { 
   pageNumber: number; 
   scaledWidth: number;
@@ -215,6 +293,19 @@ const LegacyPdfPage = memo(({
   registerPage: (pageNumber: number, element: HTMLDivElement | null) => void;
   totalPages: number;
   onPageRendered?: (pageNumber: number, height: number) => void;
+  highlights: UserHighlight[];
+  noteCount: number;
+  isHighlightMode: boolean;
+  highlightColor: HighlightColor;
+  onHighlightCreated?: (
+    pageNumber: number,
+    xPercent: number,
+    yPercent: number,
+    widthPercent: number,
+    heightPercent: number
+  ) => void;
+  onDeleteHighlight?: (highlightId: string) => void;
+  onNoteClick?: () => void;
 }) => {
   const pageRef = useRef<HTMLDivElement>(null);
 
@@ -240,30 +331,58 @@ const LegacyPdfPage = memo(({
       className="flex flex-col items-center"
       style={{ width: scaledWidth }}
     >
-      <Page
-        pageNumber={pageNumber}
-        width={scaledWidth}
-        renderTextLayer={true}
-        renderAnnotationLayer={true}
-        className="shadow-[var(--shadow-lg)] rounded-sm pdf-page-secure"
-        onRenderSuccess={handleRenderSuccess}
-        loading={
-          <div 
-            className="flex items-center justify-center bg-muted/30 rounded-sm"
-            style={{ width: scaledWidth, height: estimatedHeight }}
-          >
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-          </div>
-        }
-        error={
-          <div 
-            className="flex items-center justify-center bg-destructive/10 rounded-sm"
-            style={{ width: scaledWidth, height: estimatedHeight }}
-          >
-            <span className="text-xs text-destructive">Failed to load page</span>
-          </div>
-        }
-      />
+      {/* Page container with overlays */}
+      <div className="relative">
+        <Page
+          pageNumber={pageNumber}
+          width={scaledWidth}
+          renderTextLayer={true}
+          renderAnnotationLayer={true}
+          className="shadow-[var(--shadow-lg)] rounded-sm pdf-page-secure"
+          onRenderSuccess={handleRenderSuccess}
+          loading={
+            <div 
+              className="flex items-center justify-center bg-muted/30 rounded-sm"
+              style={{ width: scaledWidth, height: estimatedHeight }}
+            >
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          }
+          error={
+            <div 
+              className="flex items-center justify-center bg-destructive/10 rounded-sm"
+              style={{ width: scaledWidth, height: estimatedHeight }}
+            >
+              <span className="text-xs text-destructive">Failed to load page</span>
+            </div>
+          }
+        />
+        
+        {/* Note indicator */}
+        <NoteIndicator noteCount={noteCount} onClick={onNoteClick} />
+        
+        {/* Highlight overlay - render saved highlights */}
+        <HighlightOverlay
+          highlights={highlights}
+          pageWidth={scaledWidth}
+          pageHeight={estimatedHeight}
+          onDeleteHighlight={onDeleteHighlight}
+          isHighlightMode={isHighlightMode}
+        />
+        
+        {/* Highlight drawing layer - for creating new highlights */}
+        {isHighlightMode && (
+          <HighlightDrawingLayer
+            pageNumber={pageNumber}
+            pageWidth={scaledWidth}
+            pageHeight={estimatedHeight}
+            selectedColor={highlightColor}
+            onHighlightCreated={(page, x, y, w, h) => onHighlightCreated?.(page, x, y, w, h)}
+            enabled={isHighlightMode}
+          />
+        )}
+      </div>
+      
       {/* Page separator */}
       <PageSeparator pageNumber={pageNumber} totalPages={totalPages} />
     </div>
@@ -272,7 +391,11 @@ const LegacyPdfPage = memo(({
   return prevProps.pageNumber === nextProps.pageNumber && 
          prevProps.scaledWidth === nextProps.scaledWidth &&
          prevProps.estimatedHeight === nextProps.estimatedHeight &&
-         prevProps.totalPages === nextProps.totalPages;
+         prevProps.totalPages === nextProps.totalPages &&
+         prevProps.highlights === nextProps.highlights &&
+         prevProps.noteCount === nextProps.noteCount &&
+         prevProps.isHighlightMode === nextProps.isHighlightMode &&
+         prevProps.highlightColor === nextProps.highlightColor;
 });
 
 LegacyPdfPage.displayName = 'LegacyPdfPage';
@@ -288,6 +411,13 @@ export function VirtualizedPdfViewer({
   isLoadingSegment = false,
   legacyMode = false,
   onReady,
+  getHighlightsForPage,
+  getNotesForPage,
+  isHighlightMode = false,
+  highlightColor = 'yellow',
+  onAddHighlight,
+  onDeleteHighlight,
+  onOpenNotesPanel,
 }: VirtualizedPdfViewerProps) {
   const [isReady, setIsReady] = useState(false);
 
@@ -465,6 +595,13 @@ export function VirtualizedPdfViewer({
                 totalPages={numPages}
                 onLoadError={handleSegmentLoadError}
                 onPageRendered={handlePageRendered}
+                highlights={getHighlightsForPage?.(pageNumber) || []}
+                noteCount={getNotesForPage?.(pageNumber).length || 0}
+                isHighlightMode={isHighlightMode}
+                highlightColor={highlightColor}
+                onHighlightCreated={(page, x, y, w, h) => onAddHighlight?.(page, x, y, w, h, highlightColor)}
+                onDeleteHighlight={(id) => onDeleteHighlight?.(id)}
+                onNoteClick={onOpenNotesPanel}
               />
             </div>
           );
@@ -493,6 +630,13 @@ export function VirtualizedPdfViewer({
               registerPage={stableRegisterPage}
               totalPages={numPages}
               onPageRendered={handlePageRendered}
+              highlights={getHighlightsForPage?.(pageNumber) || []}
+              noteCount={getNotesForPage?.(pageNumber).length || 0}
+              isHighlightMode={isHighlightMode}
+              highlightColor={highlightColor}
+              onHighlightCreated={(page, x, y, w, h) => onAddHighlight?.(page, x, y, w, h, highlightColor)}
+              onDeleteHighlight={(id) => onDeleteHighlight?.(id)}
+              onNoteClick={onOpenNotesPanel}
             />
           </div>
         );

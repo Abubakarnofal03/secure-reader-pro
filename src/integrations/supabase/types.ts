@@ -289,6 +289,91 @@ export type Database = {
           },
         ]
       }
+      user_highlights: {
+        Row: {
+          color: string
+          content_id: string
+          created_at: string
+          height_percent: number
+          id: string
+          page_number: number
+          user_id: string
+          width_percent: number
+          x_percent: number
+          y_percent: number
+        }
+        Insert: {
+          color?: string
+          content_id: string
+          created_at?: string
+          height_percent: number
+          id?: string
+          page_number: number
+          user_id: string
+          width_percent: number
+          x_percent: number
+          y_percent: number
+        }
+        Update: {
+          color?: string
+          content_id?: string
+          created_at?: string
+          height_percent?: number
+          id?: string
+          page_number?: number
+          user_id?: string
+          width_percent?: number
+          x_percent?: number
+          y_percent?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_highlights_content_id_fkey"
+            columns: ["content_id"]
+            isOneToOne: false
+            referencedRelation: "content"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_notes: {
+        Row: {
+          content_id: string
+          created_at: string
+          id: string
+          note_text: string
+          page_number: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          content_id: string
+          created_at?: string
+          id?: string
+          note_text: string
+          page_number: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          content_id?: string
+          created_at?: string
+          id?: string
+          note_text?: string
+          page_number?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_notes_content_id_fkey"
+            columns: ["content_id"]
+            isOneToOne: false
+            referencedRelation: "content"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
