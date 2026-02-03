@@ -90,60 +90,62 @@ export function PostList() {
               transition={{ delay: index * 0.05 }}
               className="p-4 rounded-xl border border-border bg-card"
             >
-              <div className="flex items-start gap-4">
+              <div className="flex items-start gap-3">
                 {post.cover_image_url && (
                   <img
                     src={post.cover_image_url}
                     alt=""
-                    className="h-16 w-24 object-cover rounded-lg flex-shrink-0"
+                    className="h-16 w-16 object-cover rounded-lg flex-shrink-0"
                   />
                 )}
                 
-                <div className="flex-1 min-w-0">
+                <div className="flex-1 min-w-0 overflow-hidden">
                   <div className="flex items-center gap-2 mb-1">
-                    <h4 className="font-medium truncate">{post.title}</h4>
+                    <h4 className="font-medium truncate flex-1 min-w-0">{post.title}</h4>
                     <Badge 
                       variant="outline" 
-                      className={getCategoryColor(post.category)}
+                      className={`${getCategoryColor(post.category)} flex-shrink-0 text-xs`}
                     >
                       {post.category}
                     </Badge>
                   </div>
                   
-                  <p className="text-sm text-muted-foreground line-clamp-2 mb-2">
+                  <p className="text-sm text-muted-foreground line-clamp-1 mb-2">
                     {post.excerpt || 'No excerpt'}
                   </p>
                   
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground min-w-0 flex-shrink">
                       {post.is_published ? (
                         <>
-                          <Eye className="h-3 w-3" />
-                          <span>Published {post.published_at ? format(new Date(post.published_at), 'MMM d, yyyy') : ''}</span>
+                          <Eye className="h-3 w-3 flex-shrink-0" />
+                          <span className="truncate">{post.published_at ? format(new Date(post.published_at), 'MMM d, yyyy') : 'Published'}</span>
                         </>
                       ) : (
                         <>
-                          <EyeOff className="h-3 w-3" />
+                          <EyeOff className="h-3 w-3 flex-shrink-0" />
                           <span>Draft</span>
                         </>
                       )}
                     </div>
                     
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1 flex-shrink-0">
                       <Switch
                         checked={post.is_published}
                         onCheckedChange={(checked) => togglePublish(post.id, checked)}
                       />
                       <Button
                         variant="ghost"
-                        size="sm"
+                        size="icon"
+                        className="h-8 w-8"
                         onClick={() => handleEdit(post)}
                       >
                         <Edit className="h-4 w-4" />
                       </Button>
                       <Button
                         variant="ghost"
-                        size="sm"
+                        size="icon"
+                        className="h-8 w-8"
                         onClick={() => setDeleteTarget(post)}
                       >
                         <Trash2 className="h-4 w-4 text-destructive" />
