@@ -25,4 +25,4 @@ dist-ssr
 
 # Firebase configuration files (contain API keys)
 android/app/google-services.json
-ios/App/App/GoogleService-Info.plist
+# ios/App/App/GoogleService-Info.plist

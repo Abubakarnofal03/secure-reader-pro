@@ -1,5 +1,6 @@
 import { PushNotifications, Token, PushNotificationSchema, ActionPerformed } from '@capacitor/push-notifications';
 import { Capacitor } from '@capacitor/core';
+import { supabase } from '@/integrations/supabase/client';
 
 export const initializePushNotifications = async () => {
   // Only available on mobile platforms
@@ -10,7 +11,7 @@ export const initializePushNotifications = async () => {
 
   // Request permission
   const permissionStatus = await PushNotifications.requestPermissions();
-  
+
   if (permissionStatus.receive === 'granted') {
     // Register with Apple / Google to receive push notifications
     await PushNotifications.register();
@@ -48,20 +49,26 @@ export const initializePushNotifications = async () => {
 // Send token to your backend
 const sendTokenToServer = async (token: string) => {
   try {
-    // TODO: Replace with your backend API endpoint
-    // Example:
-    // await fetch('YOUR_API_ENDPOINT/register-token', {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify({ 
-    //     token, 
-    //     platform: Capacitor.getPlatform(),
-    //     userId: 'current-user-id' // Add user identification
-    //   })
-    // });
-    
-    console.log('Token to be sent to server:', token);
-    console.log('Platform:', Capacitor.getPlatform());
+    // Get current user
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      console.error('Cannot save token: User not authenticated');
+      return;
+    }
+
+    // Save token to profiles table
+    const { error: updateError } = await supabase
+      .from('profiles')
+      .update({ fcm_token: token })
+      .eq('id', user.id);
+
+    if (updateError) {
+      console.error('Error saving FCM token to database:', updateError);
+    } else {
+      console.log('FCM token saved successfully for user:', user.id);
+    }
+
   } catch (error) {
     console.error('Error sending token to server:', error);
   }
@@ -71,7 +78,7 @@ const sendTokenToServer = async (token: string) => {
 const handleNotificationNavigation = (data: any) => {
   // Example: Navigate to specific screen based on notification data
   console.log('Notification data:', data);
-  
+
   // TODO: Implement your navigation logic
   // Examples:
   // if (data.screen === 'meal') {

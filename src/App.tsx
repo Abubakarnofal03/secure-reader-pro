@@ -12,6 +12,8 @@ import { DeepLinkHandler } from "@/components/DeepLinkHandler";
 import { useTermsAcceptance } from "@/hooks/useTermsAcceptance";
 import { ThemeProvider } from "next-themes";
 import { LoadingScreen } from "@/components/LoadingScreen";
+import { initializePushNotifications } from "@/services/pushNotifications";
+import { useEffect } from "react";
 
 import SplashScreen from "./pages/SplashScreen";
 import LoginScreen from "./pages/LoginScreen";
@@ -31,6 +33,11 @@ const queryClient = new QueryClient();
 
 function AppContent() {
   const { hasAcceptedTerms, isLoading, acceptTerms } = useTermsAcceptance();
+
+  // Initialize push notifications on app start
+  useEffect(() => {
+    initializePushNotifications().catch(console.error);
+  }, []);
 
   const handleDeclineTerms = () => {
     // Close the app or show blocked state

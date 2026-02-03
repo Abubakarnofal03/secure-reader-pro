@@ -2,6 +2,21 @@ import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
+// Helper to get all user FCM tokens
+async function getAllUserTokens(): Promise<string[]> {
+  try {
+    const { data } = await supabase
+      .from('profiles')
+      .select('fcm_token')
+      .not('fcm_token', 'is', null);
+
+    return data?.map(p => p.fcm_token).filter(Boolean) || [];
+  } catch (error) {
+    console.error('Error fetching user tokens:', error);
+    return [];
+  }
+}
+
 export interface Post {
   id: string;
   title: string;
@@ -69,7 +84,29 @@ export function usePostManagement() {
         .single();
 
       if (error) throw error;
-      
+
+      // Send push notification to all users if published
+      if (data.is_published) {
+        try {
+          const { data: notifData } = await supabase.functions.invoke('send-push-notification', {
+            body: {
+              title: `New ${data.category === 'news' ? 'News' : data.category === 'blog' ? 'Blog Post' : 'Highlight'}`,
+              body: data.title,
+              data: {
+                type: 'new_post',
+                post_id: newPost.id,
+                category: data.category,
+              },
+              // Send to all non-admin users with FCM tokens
+              fcmTokens: await getAllUserTokens(),
+            },
+          });
+          console.log('Push notification sent:', notifData);
+        } catch (notifError) {
+          console.log('Push notification failed (non-critical):', notifError);
+        }
+      }
+
       toast.success('Post created successfully');
       await fetchPosts();
       return newPost as Post;
@@ -83,7 +120,7 @@ export function usePostManagement() {
   const updatePost = useCallback(async (data: UpdatePostData): Promise<Post | null> => {
     try {
       const { id, ...updateData } = data;
-      
+
       // If publishing for the first time, set published_at
       if (updateData.is_published) {
         const existingPost = posts.find(p => p.id === id);
@@ -100,7 +137,7 @@ export function usePostManagement() {
         .single();
 
       if (error) throw error;
-      
+
       toast.success('Post updated successfully');
       await fetchPosts();
       return updatedPost as Post;
@@ -119,7 +156,7 @@ export function usePostManagement() {
         .eq('id', id);
 
       if (error) throw error;
-      
+
       toast.success('Post deleted successfully');
       await fetchPosts();
       return true;
@@ -133,7 +170,7 @@ export function usePostManagement() {
   const togglePublish = useCallback(async (id: string, isPublished: boolean): Promise<boolean> => {
     try {
       const updateData: any = { is_published: isPublished };
-      
+
       if (isPublished) {
         const existingPost = posts.find(p => p.id === id);
         if (existingPost && !existingPost.published_at) {
@@ -147,7 +184,7 @@ export function usePostManagement() {
         .eq('id', id);
 
       if (error) throw error;
-      
+
       toast.success(isPublished ? 'Post published' : 'Post unpublished');
       await fetchPosts();
       return true;
