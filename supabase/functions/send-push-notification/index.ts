@@ -8,10 +8,13 @@ const corsHeaders = {
 
 // Convert PEM private key to CryptoKey for signing
 async function importPrivateKey(pem: string): Promise<CryptoKey> {
-  const pemContents = pem
+  // Handle escaped newlines that may occur when stored as env variable
+  const normalizedPem = pem.replace(/\\n/g, "\n");
+  
+  const pemContents = normalizedPem
     .replace("-----BEGIN PRIVATE KEY-----", "")
     .replace("-----END PRIVATE KEY-----", "")
-    .replace(/\s/g, "");
+    .replace(/[\r\n\s]/g, "");
   
   const binaryDer = Uint8Array.from(atob(pemContents), c => c.charCodeAt(0));
   
