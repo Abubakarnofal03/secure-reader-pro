@@ -8,16 +8,16 @@ const corsHeaders = {
 
 // Convert PEM private key to CryptoKey for signing
 async function importPrivateKey(pem: string): Promise<CryptoKey> {
-  // Handle escaped newlines that may occur when stored as env variable
+  // Handle both literal newlines and escaped \n in the private key
   const normalizedPem = pem.replace(/\\n/g, "\n");
-  
+
   const pemContents = normalizedPem
     .replace("-----BEGIN PRIVATE KEY-----", "")
     .replace("-----END PRIVATE KEY-----", "")
-    .replace(/[\r\n\s]/g, "");
-  
-  const binaryDer = Uint8Array.from(atob(pemContents), c => c.charCodeAt(0));
-  
+    .replace(/\s/g, "");
+
+  const binaryDer = Uint8Array.from(atob(pemContents), (c) => c.charCodeAt(0));
+
   return await crypto.subtle.importKey(
     "pkcs8",
     binaryDer,
@@ -26,7 +26,7 @@ async function importPrivateKey(pem: string): Promise<CryptoKey> {
       hash: "SHA-256",
     },
     false,
-    ["sign"]
+    ["sign"],
   );
 }
 
@@ -42,10 +42,7 @@ function base64UrlEncode(data: Uint8Array | string): string {
 }
 
 // Create and sign JWT for Google OAuth2
-async function createSignedJwt(serviceAccount: {
-  client_email: string;
-  private_key: string;
-}): Promise<string> {
+async function createSignedJwt(serviceAccount: { client_email: string; private_key: string }): Promise<string> {
   const header = {
     alg: "RS256",
     typ: "JWT",
@@ -67,21 +64,14 @@ async function createSignedJwt(serviceAccount: {
 
   const privateKey = await importPrivateKey(serviceAccount.private_key);
   const encoder = new TextEncoder();
-  const signature = await crypto.subtle.sign(
-    "RSASSA-PKCS1-v1_5",
-    privateKey,
-    encoder.encode(signatureInput)
-  );
+  const signature = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", privateKey, encoder.encode(signatureInput));
 
   const encodedSignature = base64UrlEncode(new Uint8Array(signature));
   return `${signatureInput}.${encodedSignature}`;
 }
 
 // Get OAuth2 access token from Google
-async function getAccessToken(serviceAccount: {
-  client_email: string;
-  private_key: string;
-}): Promise<string> {
+async function getAccessToken(serviceAccount: { client_email: string; private_key: string }): Promise<string> {
   const jwt = await createSignedJwt(serviceAccount);
 
   const response = await fetch("https://oauth2.googleapis.com/token", {
@@ -108,7 +98,7 @@ async function sendFcmNotification(
   fcmToken: string,
   title: string,
   body: string,
-  data?: Record<string, string>
+  data?: Record<string, string>,
 ): Promise<boolean> {
   const url = `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`;
 
@@ -209,17 +199,14 @@ serve(async (req) => {
 
     if (tokens.length === 0) {
       console.log("No FCM tokens found to send notifications");
-      return new Response(
-        JSON.stringify({ success: true, message: "No tokens to send to" }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return new Response(JSON.stringify({ success: true, message: "No tokens to send to" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     // Send notifications to all tokens
     const results = await Promise.all(
-      tokens.map((token) =>
-        sendFcmNotification(accessToken, projectId, token, title, body, data)
-      )
+      tokens.map((token) => sendFcmNotification(accessToken, projectId, token, title, body, data)),
     );
 
     const successCount = results.filter(Boolean).length;
@@ -231,17 +218,14 @@ serve(async (req) => {
         sent: successCount,
         total: tokens.length,
       }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (error) {
     console.error("Push notification error:", error);
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    return new Response(
-      JSON.stringify({ success: false, error: errorMessage }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
-    );
+    return new Response(JSON.stringify({ success: false, error: errorMessage }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 });
