@@ -92,19 +92,19 @@ export default function SplashScreen() {
             }}
             transition={{ duration: 0.5, delay: 0.3, ease: 'easeOut' }}
           >
-            {/* Page lines */}
-            <div className="absolute inset-3 flex flex-col justify-center gap-1.5">
-              {[...Array(6)].map((_, i) => (
-                <motion.div
-                  key={i}
-                  className="h-0.5 bg-amber-800/20 rounded"
-                  initial={{ scaleX: 0 }}
-                  animate={{ scaleX: isOpening ? 1 : 0 }}
-                  transition={{ duration: 0.3, delay: 0.5 + i * 0.05 }}
-                  style={{ width: `${65 + (i % 3) * 12}%`, originX: 0 }}
-                />
-              ))}
-            </div>
+            {/* Logo on page */}
+            <motion.div 
+              className="absolute inset-0 flex items-center justify-center"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: isOpening ? 1 : 0 }}
+              transition={{ duration: 0.3, delay: 0.6 }}
+            >
+              <img 
+                src={logo} 
+                alt="MyCalorics" 
+                className="w-14 h-14 object-contain opacity-60"
+              />
+            </motion.div>
           </motion.div>
 
           {/* Front cover - opens with 3D rotation */}
