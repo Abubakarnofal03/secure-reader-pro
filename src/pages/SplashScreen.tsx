@@ -171,10 +171,10 @@ export default function SplashScreen() {
           transition={{ duration: 0.4, delay: 0.5 }}
         >
           <h1 className="font-display text-xl font-semibold text-primary-foreground tracking-wide">
-            SecureReader
+            MyCalorics
           </h1>
           <p className="mt-1.5 text-xs text-primary-foreground/50 italic">
-            Your Protected Digital Library
+            Your Personalized Nutrition Guide
           </p>
         </motion.div>
 
