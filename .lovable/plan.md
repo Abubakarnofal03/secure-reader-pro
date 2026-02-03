@@ -1,110 +1,169 @@
 
 
-# Standalone Auth Bridge Page for Vercel
+# PDF Reader Notes and Highlighting Feature
 
 ## Overview
-Create a **completely standalone, single-file HTML page** that can be deployed to Vercel independently of the main app. This page handles email verification and password reset redirects without any React, build tools, or external dependencies.
 
-## Why a Standalone HTML File?
+Add two new features to the PDF reader:
+1. **Notes System** - Allow users to add personal notes organized by page number
+2. **Text Highlighting** - Visual highlighting of text regions (without actual text selection due to security constraints)
 
-The current `AuthCallbackPage.tsx` uses:
-- React and JSX
-- Capacitor (native platform detection)
-- Tailwind CSS classes
-- Local logo import
-- shadcn/ui Button component
+## Current Architecture Analysis
 
-For Vercel deployment, you'd need to either deploy the entire React app or create a completely standalone page. A **single HTML file** is the cleanest solution:
+The PDF reader uses several important patterns:
+- **Virtualized rendering** with @tanstack/react-virtual for performance
+- **Segmented PDF loading** for large documents (50-page chunks)
+- **Security constraints**: Text selection is disabled via CSS (`user-select: none`, `pointer-events: none` on text layer) and JavaScript event handlers block copy/paste
+- **User data model**: Uses `reading_progress` table pattern with `user_id`, `content_id` for per-user content data
 
-| Approach | Pros | Cons |
-|----------|------|------|
-| Deploy entire app | Uses existing code | Exposes all routes, large bundle |
-| Standalone HTML file | Tiny, fast, no build step | Duplicates styling |
+## Technical Approach
 
-## What I'll Create
+### 1. Notes Feature
 
-A new file `public/auth-callback.html` - a single, self-contained HTML page with:
+**Database Design**
+- New `user_notes` table to store notes per user/content/page
+- Columns: `id`, `user_id`, `content_id`, `page_number`, `note_text`, `created_at`, `updated_at`
+- RLS policies for user-only access
 
-- **Inline CSS** matching MyCalorics branding (sage green, warm taupe)
-- **Inline JavaScript** for token parsing and deep link redirect
-- **Base64-encoded logo** or hosted logo URL
-- **No external dependencies** (no React, no Tailwind, no npm)
+**UI Components**
+- **NotesPanel** - A sheet/drawer accessible from the reader header showing all notes
+- **AddNoteDialog** - Modal to add/edit notes for the current page
+- **PageNotes indicator** - Small icon on pages that have notes
 
-## File Structure for Vercel
+**Integration Points**
+- Add notes icon button to reader header (next to TOC button)
+- Notes panel slides in from right (similar to TOC which slides from left)
+- Quick-add floating button on current page
+
+### 2. Highlighting Feature
+
+Since text selection is disabled for security, we'll implement a **visual overlay system**:
+
+**How It Works**
+- User taps a "Highlight Mode" toggle in the header
+- In highlight mode, user can tap-and-drag to draw rectangular highlight regions on pages
+- Highlights are stored as coordinates relative to page dimensions (percentage-based for zoom compatibility)
+- Highlights render as semi-transparent colored overlays on top of the PDF canvas
+
+**Database Design**
+- New `user_highlights` table
+- Columns: `id`, `user_id`, `content_id`, `page_number`, `x_percent`, `y_percent`, `width_percent`, `height_percent`, `color`, `created_at`
+- RLS policies for user-only access
+
+**UI Components**
+- **HighlightLayer** - Overlay component rendered on each page showing saved highlights
+- **HighlightModeToggle** - Header button to enter/exit highlight mode
+- **ColorPicker** - Small popover to choose highlight color (yellow, green, blue, pink)
+
+**Key Technical Considerations**
+- Highlights stored as percentages to scale correctly with zoom
+- Touch/mouse drag handling for drawing regions
+- Highlight mode temporarily disables scroll to allow drawing
+
+---
+
+## Implementation Plan
+
+### Phase 1: Database Setup
+
+Create two new tables with appropriate RLS:
 
 ```text
-vercel-auth-bridge/
-├── index.html          ← The standalone auth page
-├── vercel.json         ← Route configuration
-└── logo.png            ← MyCalorics logo
++------------------+     +--------------------+
+|   user_notes     |     |  user_highlights   |
++------------------+     +--------------------+
+| id (uuid, PK)    |     | id (uuid, PK)      |
+| user_id (uuid)   |     | user_id (uuid)     |
+| content_id (uuid)|     | content_id (uuid)  |
+| page_number (int)|     | page_number (int)  |
+| note_text (text) |     | x_percent (float)  |
+| created_at       |     | y_percent (float)  |
+| updated_at       |     | width_percent (flt)|
++------------------+     | height_percent     |
+                         | color (text)       |
+                         | created_at         |
+                         +--------------------+
 ```
 
-When deployed to Vercel, visiting `mycalorics.vercel.app/` will show the auth page.
+### Phase 2: Notes Implementation
 
-## The Standalone Page Will Handle
+1. **Create `useUserNotes` hook**
+   - Fetch notes for current content
+   - CRUD operations (add, edit, delete notes)
+   - Organize by page number
 
-1. **Email Verification** (`type=signup` or `type=email`)
-   - Redirects to `mycalorics://library?access_token=...`
-   
-2. **Password Reset** (`type=recovery`)
-   - Redirects to `mycalorics://reset-password?access_token=...`
-   
-3. **Error States**
-   - Shows branded error message if authentication failed
-   
-4. **Manual Fallback**
-   - "Open MyCalorics App" button if auto-redirect doesn't work
+2. **Create UI components**
+   - `NotesPanel.tsx` - Side drawer with list of all notes grouped by page
+   - `AddNoteDialog.tsx` - Modal for adding/editing notes
+   - `NoteIndicator.tsx` - Small badge shown on pages with notes
 
-## Implementation Details
+3. **Integrate into SecureReaderScreen**
+   - Add notes button to header
+   - Pass note data to VirtualizedPdfViewer for indicators
 
-### Inline Styles (matches current theme)
-```css
-:root {
-  --background: hsl(80 20% 97%);
-  --foreground: hsl(80 10% 15%);
-  --primary: hsl(100 22% 55%);
-  --primary-10: hsl(100 22% 55% / 0.1);
-  --muted: hsl(80 10% 35%);
-  --destructive-10: hsl(0 72% 50% / 0.1);
-}
-```
+### Phase 3: Highlighting Implementation
 
-### Token Parsing Logic
-```javascript
-const hash = window.location.hash;
-const params = new URLSearchParams(hash.substring(1));
-const accessToken = params.get('access_token');
-const refreshToken = params.get('refresh_token');
-const type = params.get('type');
-```
+1. **Create `useUserHighlights` hook**
+   - Fetch highlights for current content
+   - Save new highlights
+   - Delete highlights
 
-### Deep Link Construction
-```javascript
-const appPath = type === 'recovery' ? 'reset-password' : 'library';
-let deepLink = `mycalorics://${appPath}`;
-if (accessToken) {
-  const tokenParams = new URLSearchParams();
-  tokenParams.set('access_token', accessToken);
-  if (refreshToken) tokenParams.set('refresh_token', refreshToken);
-  if (type) tokenParams.set('type', type);
-  deepLink += '?' + tokenParams.toString();
-}
-window.location.href = deepLink;
-```
+2. **Create UI components**
+   - `HighlightOverlay.tsx` - Renders colored rectangles on pages
+   - `HighlightModeController.tsx` - Manages draw mode, touch handling
+   - `HighlightColorPicker.tsx` - Color selection UI
 
-## Files I'll Create
+3. **Integrate into VirtualizedPdfViewer**
+   - Add highlight overlay layer to each page
+   - Handle touch/mouse events for drawing when in highlight mode
+
+### Phase 4: Polish and UX
+
+- Smooth animations for panels and dialogs
+- Haptic feedback on mobile for highlight creation
+- Undo functionality for accidental highlights
+- Export notes feature (optional future enhancement)
+
+---
+
+## Files to Create
 
 | File | Purpose |
 |------|---------|
-| `public/auth-callback.html` | Standalone auth bridge page (can be copied to Vercel project) |
+| `src/hooks/useUserNotes.ts` | Notes CRUD hook |
+| `src/hooks/useUserHighlights.ts` | Highlights CRUD hook |
+| `src/components/reader/NotesPanel.tsx` | Notes sidebar panel |
+| `src/components/reader/AddNoteDialog.tsx` | Add/edit note modal |
+| `src/components/reader/NoteIndicator.tsx` | Page note badge |
+| `src/components/reader/HighlightOverlay.tsx` | Highlight rendering |
+| `src/components/reader/HighlightModeController.tsx` | Draw mode management |
+| `src/components/reader/HighlightColorPicker.tsx` | Color selection |
 
-This approach gives you a **ready-to-deploy file** that you can simply copy to a new Vercel project folder and deploy with zero configuration.
+## Files to Modify
 
-## Deployment Steps (After Implementation)
+| File | Changes |
+|------|---------|
+| `src/pages/SecureReaderScreen.tsx` | Add notes/highlight buttons, integrate new hooks |
+| `src/components/reader/VirtualizedPdfViewer.tsx` | Add highlight overlay layer to pages |
+| `src/components/reader/SegmentedPdfPage` | Render highlight overlays and note indicators |
+| `src/components/reader/LegacyPdfPage` | Same additions for legacy mode |
 
-1. Create a new folder on your computer
-2. Copy `auth-callback.html` → rename to `index.html`
-3. Copy the logo.png file
-4. Run `vercel` in that folder (or drag to Vercel dashboard)
-5. Update Supabase redirect URLs to your Vercel URL
+---
+
+## Technical Details
+
+### Security Considerations
+- Notes and highlights are user-specific (RLS enforced)
+- No access to actual PDF text content (respects existing security)
+- Highlights are visual overlays, not text-based annotations
+
+### Performance Considerations
+- Lazy load notes/highlights per visible segment
+- Debounce save operations
+- Minimal re-renders using memo patterns consistent with existing code
+
+### Mobile UX
+- Large touch targets for highlight drawing
+- Swipe gestures for notes panel
+- Responsive layouts for both features
 
