@@ -317,15 +317,15 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
           <Label htmlFor="file">PDF File</Label>
           <div className="mt-1.5">
             {selectedFile ? (
-              <div className="flex items-center justify-between rounded-lg bg-secondary p-3">
-                <div className="flex items-center gap-2 min-w-0">
+              <div className="flex items-center justify-between gap-2 rounded-lg bg-secondary p-3 overflow-hidden">
+                <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
                   <FileUp className="h-4 w-4 flex-shrink-0 text-primary" />
-                  <span className="truncate text-sm">{selectedFile.name}</span>
-                  <span className="text-xs text-muted-foreground">
+                  <span className="truncate text-sm flex-1 min-w-0">{selectedFile.name}</span>
+                  <span className="text-xs text-muted-foreground whitespace-nowrap flex-shrink-0">
                     ({(selectedFile.size / 1024 / 1024).toFixed(2)} MB)
                   </span>
                 </div>
-                <Button variant="ghost" size="sm" onClick={clearSelection} disabled={uploading}>
+                <Button variant="ghost" size="sm" onClick={clearSelection} disabled={uploading} className="flex-shrink-0">
                   <X className="h-4 w-4" />
                 </Button>
               </div>
