@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, Suspense, lazy } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Library, Sparkles, RefreshCw } from 'lucide-react';
@@ -8,7 +8,11 @@ import { PurchaseDialog } from '@/components/library/PurchaseDialog';
 import { LibraryBookItem } from '@/components/library/LibraryBookItem';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Skeleton } from '@/components/ui/skeleton';
 import logo from '@/assets/logo.png';
+
+// Lazy load HighlightsSection to prevent unnecessary network requests on app start
+const HighlightsSection = lazy(() => import('@/components/highlights/HighlightsSection'));
 
 interface ContentItem {
   id: string;
@@ -29,7 +33,7 @@ interface ReadingProgress {
   [contentId: string]: number; // percentage 0-100
 }
 
-type TabType = 'my-books' | 'store';
+type TabType = 'my-books' | 'store' | 'highlights';
 
 export default function ContentListScreen() {
   const { profile, user } = useAuth();
@@ -197,7 +201,7 @@ export default function ContentListScreen() {
 
         {/* Tab Navigation */}
         <div className="px-6">
-          <div className="flex gap-8">
+          <div className="flex gap-6">
             <button
               onClick={() => setActiveTab('my-books')}
               className={`pb-3 text-sm font-medium transition-colors relative ${
@@ -225,6 +229,23 @@ export default function ContentListScreen() {
             >
               Store
               {activeTab === 'store' && (
+                <motion.div
+                  layoutId="activeTab"
+                  className="absolute bottom-0 left-0 right-0 h-[1px] bg-foreground"
+                  transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                />
+              )}
+            </button>
+            <button
+              onClick={() => setActiveTab('highlights')}
+              className={`pb-3 text-sm font-medium transition-colors relative ${
+                activeTab === 'highlights'
+                  ? 'text-foreground'
+                  : 'text-muted-foreground hover:text-foreground/70'
+              }`}
+            >
+              Updates
+              {activeTab === 'highlights' && (
                 <motion.div
                   layoutId="activeTab"
                   className="absolute bottom-0 left-0 right-0 h-[1px] bg-foreground"
@@ -262,7 +283,20 @@ export default function ContentListScreen() {
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       >
-        {loading ? (
+        {/* Highlights Tab - Lazy Loaded */}
+        {activeTab === 'highlights' ? (
+          <Suspense 
+            fallback={
+              <div className="p-4 space-y-3">
+                {[1, 2, 3, 4].map((i) => (
+                  <Skeleton key={i} className="h-28 w-full rounded-xl" />
+                ))}
+              </div>
+            }
+          >
+            <HighlightsSection />
+          </Suspense>
+        ) : loading ? (
           <div className="p-5 space-y-3">
             {[1, 2, 3, 4].map((i) => (
               <div key={i} className="h-24 animate-shimmer rounded-xl" />

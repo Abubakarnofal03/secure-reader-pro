@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
+import logo from '@/assets/logo.png';
 
 export default function SplashScreen() {
   const navigate = useNavigate();
@@ -91,19 +92,19 @@ export default function SplashScreen() {
             }}
             transition={{ duration: 0.5, delay: 0.3, ease: 'easeOut' }}
           >
-            {/* Page lines */}
-            <div className="absolute inset-3 flex flex-col justify-center gap-1.5">
-              {[...Array(6)].map((_, i) => (
-                <motion.div
-                  key={i}
-                  className="h-0.5 bg-amber-800/20 rounded"
-                  initial={{ scaleX: 0 }}
-                  animate={{ scaleX: isOpening ? 1 : 0 }}
-                  transition={{ duration: 0.3, delay: 0.5 + i * 0.05 }}
-                  style={{ width: `${65 + (i % 3) * 12}%`, originX: 0 }}
-                />
-              ))}
-            </div>
+            {/* Logo on page */}
+            <motion.div 
+              className="absolute inset-0 flex items-center justify-center"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: isOpening ? 1 : 0 }}
+              transition={{ duration: 0.3, delay: 0.6 }}
+            >
+              <img 
+                src={logo} 
+                alt="MyCalorics" 
+                className="w-28 h-28 object-contain opacity-80"
+              />
+            </motion.div>
           </motion.div>
 
           {/* Front cover - opens with 3D rotation */}
@@ -135,21 +136,13 @@ export default function SplashScreen() {
                 <div className="absolute -bottom-px -right-px w-3 h-3 border-b border-r border-gold/50" />
               </div>
 
-              {/* Center emblem */}
+              {/* Center logo */}
               <div className="absolute inset-0 flex items-center justify-center">
-                <div className="w-12 h-12 rounded-full border border-gold/40 flex items-center justify-center bg-gold/10">
-                  <svg 
-                    viewBox="0 0 24 24" 
-                    className="w-5 h-5 text-gold"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                  >
-                    <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
-                    <path d="M12 6v7M9 10h6" />
-                  </svg>
-                </div>
+                <img 
+                  src={logo} 
+                  alt="MyCalorics" 
+                  className="w-28 h-28 object-contain"
+                />
               </div>
 
               {/* Decorative lines */}
@@ -178,10 +171,10 @@ export default function SplashScreen() {
           transition={{ duration: 0.4, delay: 0.5 }}
         >
           <h1 className="font-display text-xl font-semibold text-primary-foreground tracking-wide">
-            SecureReader
+            MyCalorics
           </h1>
           <p className="mt-1.5 text-xs text-primary-foreground/50 italic">
-            Your Protected Digital Library
+            Your Personalized Nutrition Guide
           </p>
         </motion.div>
 

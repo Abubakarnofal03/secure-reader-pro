@@ -121,6 +121,48 @@ export type Database = {
           },
         ]
       }
+      posts: {
+        Row: {
+          author_id: string
+          category: string
+          content: string
+          cover_image_url: string | null
+          created_at: string
+          excerpt: string | null
+          id: string
+          is_published: boolean
+          published_at: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          author_id: string
+          category?: string
+          content?: string
+          cover_image_url?: string | null
+          created_at?: string
+          excerpt?: string | null
+          id?: string
+          is_published?: boolean
+          published_at?: string | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          author_id?: string
+          category?: string
+          content?: string
+          cover_image_url?: string | null
+          created_at?: string
+          excerpt?: string | null
+          id?: string
+          is_published?: boolean
+          published_at?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           active_device_id: string | null

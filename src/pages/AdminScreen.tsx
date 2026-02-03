@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Users, BookOpen, LogOut, Settings, ShoppingCart } from 'lucide-react';
+import { Users, BookOpen, LogOut, Settings, ShoppingCart, Newspaper } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -12,6 +12,7 @@ import { ContentAssignment } from '@/components/admin/ContentAssignment';
 import { UserManagement } from '@/components/admin/UserManagement';
 import { AdminSettings } from '@/components/admin/AdminSettings';
 import { PurchaseApprovals } from '@/components/admin/PurchaseApprovals';
+import { PostList } from '@/components/admin/PostList';
 import { supabase } from '@/integrations/supabase/client';
 import { useAdminFCM } from '@/hooks/useAdminFCM';
 
@@ -88,10 +89,14 @@ export default function AdminScreen() {
       <main className="flex-1 px-4 py-6">
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-4 mb-6">
+            <TabsList className="grid w-full grid-cols-5 mb-6">
               <TabsTrigger value="content" className="flex items-center gap-1 text-xs sm:text-sm">
                 <BookOpen className="h-4 w-4" />
                 <span className="hidden sm:inline">Content</span>
+              </TabsTrigger>
+              <TabsTrigger value="posts" className="flex items-center gap-1 text-xs sm:text-sm">
+                <Newspaper className="h-4 w-4" />
+                <span className="hidden sm:inline">Posts</span>
               </TabsTrigger>
               <TabsTrigger value="approvals" className="flex items-center gap-1 text-xs sm:text-sm relative">
                 <ShoppingCart className="h-4 w-4" />
@@ -127,6 +132,14 @@ export default function AdminScreen() {
                   refreshTrigger={refreshTrigger}
                 />
               </div>
+            </TabsContent>
+
+            <TabsContent value="posts" className="space-y-4">
+              <h3 className="flex items-center gap-2 font-semibold">
+                <Newspaper className="h-5 w-5" />
+                News, Blogs & Highlights
+              </h3>
+              <PostList />
             </TabsContent>
 
             <TabsContent value="approvals" className="space-y-4">

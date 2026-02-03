@@ -1,5 +1,6 @@
-import { BookOpen, CheckCircle } from 'lucide-react';
+import { CheckCircle } from 'lucide-react';
 import { getCategoryConfig } from '@/lib/categories';
+import logo from '@/assets/logo.png';
 
 interface BookCoverProps {
   coverUrl?: string | null;
@@ -17,10 +18,10 @@ const sizeClasses = {
   lg: 'h-24 w-[68px]',
 };
 
-const iconSizes = {
-  sm: 'h-5 w-5',
-  md: 'h-7 w-7',
-  lg: 'h-10 w-10',
+const logoSizes = {
+  sm: 'h-6 w-6',
+  md: 'h-10 w-10',
+  lg: 'h-14 w-14',
 };
 
 export function BookCover({ coverUrl, title, isOwned = false, progress, size = 'md', category, className = '' }: BookCoverProps) {
@@ -51,15 +52,12 @@ export function BookCover({ coverUrl, title, isOwned = false, progress, size = '
           <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-gradient-to-b from-border/60 via-border/30 to-border/60" />
           <div className="absolute left-[5px] top-0 bottom-0 w-[1px] bg-border/20" />
           
-          {/* Book icon */}
-          <BookOpen className={`${iconSizes[size]} ${isOwned ? 'text-primary' : 'text-muted-foreground/70'}`} />
-          
-          {/* Subtle title initial for larger covers */}
-          {size === 'lg' && title && (
-            <span className="absolute bottom-2 left-1/2 -translate-x-1/2 font-display text-xs text-muted-foreground/50 uppercase tracking-wider">
-              {title.charAt(0)}
-            </span>
-          )}
+          {/* Logo */}
+          <img 
+            src={logo} 
+            alt="MyCalorics" 
+            className={`${logoSizes[size]} object-contain opacity-70`}
+          />
         </div>
       )}
       
