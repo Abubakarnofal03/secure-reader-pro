@@ -129,6 +129,32 @@ export function PurchaseApprovals() {
 
       if (accessError) throw accessError;
 
+      // Send push notification to the user
+      try {
+        const { data: userProfile } = await supabase
+          .from('profiles')
+          .select('fcm_token')
+          .eq('id', request.user_id)
+          .single();
+
+        if (userProfile?.fcm_token) {
+          await supabase.functions.invoke('send-push-notification', {
+            body: {
+              title: 'Purchase Approved! 🎉',
+              body: `You now have access to "${request.content.title}"`,
+              data: {
+                type: 'purchase_approved',
+                content_id: request.content_id,
+              },
+              fcmTokens: [userProfile.fcm_token],
+            },
+          });
+          console.log('Approval notification sent to user');
+        }
+      } catch (notifError) {
+        console.log('Push notification failed (non-critical):', notifError);
+      }
+
       toast({ title: 'Approved', description: 'User now has access to the content' });
       fetchRequests();
     } catch (error) {

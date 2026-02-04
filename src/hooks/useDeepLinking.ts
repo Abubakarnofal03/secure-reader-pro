@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { App, URLOpenListenerEvent } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 import { supabase } from '@/integrations/supabase/client';
@@ -8,6 +8,7 @@ import { supabase } from '@/integrations/supabase/client';
  * Hook to handle deep links in the native app.
  * Listens for app URL open events and navigates to the appropriate route.
  * Also handles session establishment from auth tokens in deep links.
+ * Supports push notification deep links for specific content/screens.
  */
 export function useDeepLinking() {
   const navigate = useNavigate();
@@ -19,7 +20,7 @@ export function useDeepLinking() {
     }
 
     const handleDeepLink = async (event: URLOpenListenerEvent) => {
-      console.log('Deep link received:', event.url);
+      console.log('[DeepLinking] Deep link received:', event.url);
 
       try {
         const url = new URL(event.url);
@@ -27,6 +28,7 @@ export function useDeepLinking() {
         // Handle different URL formats:
         // 1. Custom scheme: mycalorics://reset-password?token=...
         // 2. Universal link: https://yourdomain.com/reset-password#access_token=...
+        // 3. Push notification deep links: mycalorics://library, mycalorics://reader/123
         
         let pathname = url.pathname;
         let hash = url.hash;
@@ -35,7 +37,11 @@ export function useDeepLinking() {
         // For custom URL schemes, the host might be the path
         if (url.protocol === 'mycalorics:') {
           pathname = '/' + url.host + url.pathname;
+          // Clean up double slashes
+          pathname = pathname.replace(/\/+/g, '/');
         }
+
+        console.log('[DeepLinking] Parsed pathname:', pathname, 'search:', search, 'hash:', hash);
 
         // Extract tokens from search params (sent by AuthCallbackPage)
         const accessToken = url.searchParams.get('access_token');
@@ -44,49 +50,80 @@ export function useDeepLinking() {
 
         // If we have tokens, establish the Supabase session
         if (accessToken && refreshToken) {
-          console.log('Setting session from deep link tokens...');
+          console.log('[DeepLinking] Setting session from deep link tokens...');
           const { error } = await supabase.auth.setSession({
             access_token: accessToken,
             refresh_token: refreshToken
           });
           
           if (error) {
-            console.error('Failed to set session from deep link:', error);
+            console.error('[DeepLinking] Failed to set session from deep link:', error);
           } else {
-            console.log('Session established from deep link');
+            console.log('[DeepLinking] Session established from deep link');
           }
         }
 
         // Handle password reset links
         if (pathname.includes('reset-password') || type === 'recovery') {
-          // Navigate with hash preserved for token extraction
+          console.log('[DeepLinking] Navigating to reset-password');
           navigate(`/reset-password${hash}${search}`);
           return;
         }
 
         // Handle email confirmation links
         if (pathname.includes('confirm') || type === 'signup' || type === 'email') {
-          // Session is already established above, navigate to library
+          console.log('[DeepLinking] Email confirmed, navigating to library');
           navigate('/library');
           return;
         }
 
         // Handle magic links
         if (pathname.includes('verify') || hash.includes('access_token')) {
-          // Navigate to the app, auth state listener will pick up the session
           navigate(`/${hash}`);
           return;
         }
 
-        // Default: navigate to the path (usually /library after auth)
-        if (pathname && pathname !== '/') {
+        // Handle push notification deep links
+        // Admin routes
+        if (pathname.includes('/admin')) {
+          console.log('[DeepLinking] Navigating to admin screen');
+          navigate(pathname + search);
+          return;
+        }
+
+        // Reader route with content ID
+        if (pathname.includes('/reader/')) {
+          console.log('[DeepLinking] Navigating to reader');
           navigate(pathname);
+          return;
+        }
+
+        // Library with optional params
+        if (pathname.includes('/library')) {
+          console.log('[DeepLinking] Navigating to library');
+          navigate(pathname + search);
+          return;
+        }
+
+        // Profile
+        if (pathname.includes('/profile')) {
+          console.log('[DeepLinking] Navigating to profile');
+          navigate('/profile');
+          return;
+        }
+
+        // Default: navigate to the path if valid, otherwise library
+        if (pathname && pathname !== '/' && pathname !== '//') {
+          console.log('[DeepLinking] Navigating to path:', pathname);
+          navigate(pathname + search);
         } else {
-          // Default to library if no specific path
+          console.log('[DeepLinking] Default navigation to library');
           navigate('/library');
         }
       } catch (error) {
-        console.error('Error handling deep link:', error);
+        console.error('[DeepLinking] Error handling deep link:', error);
+        // On error, default to library
+        navigate('/library');
       }
     };
 
@@ -96,6 +133,7 @@ export function useDeepLinking() {
     // Check if app was opened with a URL (cold start)
     App.getLaunchUrl().then((result) => {
       if (result?.url) {
+        console.log('[DeepLinking] App launched with URL:', result.url);
         handleDeepLink({ url: result.url });
       }
     });
