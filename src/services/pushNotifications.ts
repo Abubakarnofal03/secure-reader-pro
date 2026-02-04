@@ -9,6 +9,25 @@ export const initializePushNotifications = async () => {
     return;
   }
 
+  // CRITICAL: Create notification channel FIRST (Android 8.0+)
+  // Without this, notifications won't be delivered on Android 8.0+
+  if (Capacitor.getPlatform() === 'android') {
+    try {
+      await PushNotifications.createChannel({
+        id: 'default_channel',
+        name: 'Default Notifications',
+        description: 'General notifications for new content and updates',
+        importance: 5, // Max importance (shows popup)
+        visibility: 1, // Public (shows on lock screen)
+        sound: 'default',
+        vibration: true,
+      });
+      console.log('✅ Notification channel created: default_channel');
+    } catch (channelError) {
+      console.error('Failed to create notification channel:', channelError);
+    }
+  }
+
   // Request permission
   const permissionStatus = await PushNotifications.requestPermissions();
 
@@ -23,7 +42,6 @@ export const initializePushNotifications = async () => {
   // On success, register device token
   await PushNotifications.addListener('registration', (token: Token) => {
     console.log('Push registration success, token: ' + token.value);
-    // TODO: Send token to your backend server
     sendTokenToServer(token.value);
   });
 

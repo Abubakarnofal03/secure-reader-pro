@@ -107,7 +107,20 @@ async function sendFcmNotification(
       token: string;
       notification: { title: string; body: string };
       data?: Record<string, string>;
-      android?: { priority: string };
+      android?: {
+        priority: string;
+        notification: {
+          channel_id: string;
+          sound?: string;
+        };
+      };
+      apns?: {
+        payload: {
+          aps: {
+            sound: string;
+          };
+        };
+      };
     };
   } = {
     message: {
@@ -118,6 +131,17 @@ async function sendFcmNotification(
       },
       android: {
         priority: "high",
+        notification: {
+          channel_id: "default_channel", // CRITICAL: Must match channel created in app
+          sound: "default",
+        },
+      },
+      apns: {
+        payload: {
+          aps: {
+            sound: "default",
+          },
+        },
       },
     },
   };
