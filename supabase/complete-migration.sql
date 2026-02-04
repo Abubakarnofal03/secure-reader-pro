@@ -7,31 +7,8 @@
 -- ============================================
 
 -- ============================================
--- SECTION 1: HELPER FUNCTIONS (Security Definer)
+-- SECTION 1: UTILITY FUNCTION (No table dependencies)
 -- ============================================
-
--- Function to check if user is admin (security definer to avoid RLS recursion)
-CREATE OR REPLACE FUNCTION public.is_admin(user_id uuid)
-RETURNS boolean
-LANGUAGE sql
-STABLE SECURITY DEFINER
-SET search_path TO 'public'
-AS $$
-  SELECT EXISTS (
-    SELECT 1 FROM public.profiles
-    WHERE id = user_id AND role = 'admin'
-  );
-$$;
-
--- Function to get user role
-CREATE OR REPLACE FUNCTION public.get_user_role(user_id uuid)
-RETURNS text
-LANGUAGE sql
-STABLE SECURITY DEFINER
-SET search_path TO 'public'
-AS $$
-  SELECT role FROM public.profiles WHERE id = user_id;
-$$;
 
 -- Function to update updated_at column automatically
 CREATE OR REPLACE FUNCTION public.update_updated_at_column()
@@ -173,7 +150,34 @@ CREATE TABLE public.admin_settings (
 );
 
 -- ============================================
--- SECTION 3: INDEXES
+-- SECTION 4: HELPER FUNCTIONS (After tables exist)
+-- ============================================
+
+-- Function to check if user is admin (security definer to avoid RLS recursion)
+CREATE OR REPLACE FUNCTION public.is_admin(user_id uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.profiles
+    WHERE id = user_id AND role = 'admin'
+  );
+$$;
+
+-- Function to get user role
+CREATE OR REPLACE FUNCTION public.get_user_role(user_id uuid)
+RETURNS text
+LANGUAGE sql
+STABLE SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+  SELECT role FROM public.profiles WHERE id = user_id;
+$$;
+
+-- ============================================
+-- SECTION 5: INDEXES
 -- ============================================
 
 CREATE INDEX idx_content_segments_content_id ON public.content_segments(content_id);
@@ -190,7 +194,7 @@ CREATE INDEX idx_profiles_role ON public.profiles(role);
 CREATE INDEX idx_profiles_fcm_token ON public.profiles(fcm_token) WHERE fcm_token IS NOT NULL;
 
 -- ============================================
--- SECTION 4: TRIGGERS
+-- SECTION 6: TRIGGERS
 -- ============================================
 
 -- Auto-update updated_at for profiles
@@ -218,7 +222,7 @@ CREATE TRIGGER update_user_notes_updated_at
   EXECUTE FUNCTION public.update_updated_at_column();
 
 -- ============================================
--- SECTION 5: AUTH TRIGGER (Create profile on signup)
+-- SECTION 7: AUTH TRIGGER (Create profile on signup)
 -- ============================================
 
 CREATE OR REPLACE FUNCTION public.handle_new_user()
@@ -248,7 +252,7 @@ CREATE TRIGGER on_auth_user_created
   EXECUTE FUNCTION public.handle_new_user();
 
 -- ============================================
--- SECTION 6: ENABLE ROW LEVEL SECURITY
+-- SECTION 8: ENABLE ROW LEVEL SECURITY
 -- ============================================
 
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
@@ -263,7 +267,7 @@ ALTER TABLE public.user_notes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.admin_settings ENABLE ROW LEVEL SECURITY;
 
 -- ============================================
--- SECTION 7: RLS POLICIES - PROFILES
+-- SECTION 9: RLS POLICIES - PROFILES
 -- ============================================
 
 CREATE POLICY "Users can view their own profile"
@@ -284,7 +288,7 @@ CREATE POLICY "Admins can update all profiles"
   USING (is_admin(auth.uid()));
 
 -- ============================================
--- SECTION 8: RLS POLICIES - CONTENT
+-- SECTION 10: RLS POLICIES - CONTENT
 -- ============================================
 
 CREATE POLICY "Users can view all active content"
@@ -296,7 +300,7 @@ CREATE POLICY "Admins can manage all content"
   USING (is_admin(auth.uid()));
 
 -- ============================================
--- SECTION 9: RLS POLICIES - CONTENT SEGMENTS
+-- SECTION 11: RLS POLICIES - CONTENT SEGMENTS
 -- ============================================
 
 CREATE POLICY "Users can view segments for accessible content"
@@ -312,7 +316,7 @@ CREATE POLICY "Admins can manage all segments"
   USING (is_admin(auth.uid()));
 
 -- ============================================
--- SECTION 10: RLS POLICIES - POSTS
+-- SECTION 12: RLS POLICIES - POSTS
 -- ============================================
 
 CREATE POLICY "Anyone can view published posts"
@@ -336,7 +340,7 @@ CREATE POLICY "Admins can delete posts"
   USING (is_admin(auth.uid()));
 
 -- ============================================
--- SECTION 11: RLS POLICIES - USER CONTENT ACCESS
+-- SECTION 13: RLS POLICIES - USER CONTENT ACCESS
 -- ============================================
 
 CREATE POLICY "Users can view their own content access"
@@ -348,7 +352,7 @@ CREATE POLICY "Admins can manage all content access"
   USING (is_admin(auth.uid()));
 
 -- ============================================
--- SECTION 12: RLS POLICIES - PURCHASE REQUESTS
+-- SECTION 14: RLS POLICIES - PURCHASE REQUESTS
 -- ============================================
 
 CREATE POLICY "Users can view own purchase requests"
@@ -368,7 +372,7 @@ CREATE POLICY "Admins can update purchase requests"
   USING (is_admin(auth.uid()));
 
 -- ============================================
--- SECTION 13: RLS POLICIES - READING PROGRESS
+-- SECTION 15: RLS POLICIES - READING PROGRESS
 -- ============================================
 
 CREATE POLICY "Users can view own reading progress"
@@ -392,7 +396,7 @@ CREATE POLICY "Users can delete own reading progress"
   USING (auth.uid() = user_id);
 
 -- ============================================
--- SECTION 14: RLS POLICIES - USER HIGHLIGHTS
+-- SECTION 16: RLS POLICIES - USER HIGHLIGHTS
 -- ============================================
 
 CREATE POLICY "Users can view own highlights"
@@ -408,7 +412,7 @@ CREATE POLICY "Users can delete own highlights"
   USING (auth.uid() = user_id);
 
 -- ============================================
--- SECTION 15: RLS POLICIES - USER NOTES
+-- SECTION 17: RLS POLICIES - USER NOTES
 -- ============================================
 
 CREATE POLICY "Users can view own notes"
@@ -428,7 +432,7 @@ CREATE POLICY "Users can delete own notes"
   USING (auth.uid() = user_id);
 
 -- ============================================
--- SECTION 16: RLS POLICIES - ADMIN SETTINGS
+-- SECTION 18: RLS POLICIES - ADMIN SETTINGS
 -- ============================================
 
 CREATE POLICY "Users can read settings"
@@ -440,7 +444,7 @@ CREATE POLICY "Admins can manage settings"
   USING (is_admin(auth.uid()));
 
 -- ============================================
--- SECTION 17: STORAGE BUCKETS
+-- SECTION 19: STORAGE BUCKETS
 -- ============================================
 
 -- Create storage buckets
@@ -450,7 +454,7 @@ INSERT INTO storage.buckets (id, name, public) VALUES ('payment-proofs', 'paymen
 INSERT INTO storage.buckets (id, name, public) VALUES ('post-covers', 'post-covers', true);
 
 -- ============================================
--- SECTION 18: STORAGE POLICIES - CONTENT FILES (Private)
+-- SECTION 20: STORAGE POLICIES - CONTENT FILES (Private)
 -- ============================================
 
 CREATE POLICY "Admins can upload content files"
@@ -470,7 +474,7 @@ CREATE POLICY "Admins can view all content files"
   USING (bucket_id = 'content-files' AND is_admin(auth.uid()));
 
 -- ============================================
--- SECTION 19: STORAGE POLICIES - CONTENT COVERS (Public)
+-- SECTION 21: STORAGE POLICIES - CONTENT COVERS (Public)
 -- ============================================
 
 CREATE POLICY "Anyone can view content covers"
@@ -490,7 +494,7 @@ CREATE POLICY "Admins can delete content covers"
   USING (bucket_id = 'content-covers' AND is_admin(auth.uid()));
 
 -- ============================================
--- SECTION 20: STORAGE POLICIES - PAYMENT PROOFS (Private)
+-- SECTION 22: STORAGE POLICIES - PAYMENT PROOFS (Private)
 -- ============================================
 
 CREATE POLICY "Users can upload own payment proofs"
@@ -512,7 +516,7 @@ CREATE POLICY "Admins can view all payment proofs"
   USING (bucket_id = 'payment-proofs' AND is_admin(auth.uid()));
 
 -- ============================================
--- SECTION 21: STORAGE POLICIES - POST COVERS (Public)
+-- SECTION 23: STORAGE POLICIES - POST COVERS (Public)
 -- ============================================
 
 CREATE POLICY "Anyone can view post covers"
@@ -532,7 +536,7 @@ CREATE POLICY "Admins can delete post covers"
   USING (bucket_id = 'post-covers' AND is_admin(auth.uid()));
 
 -- ============================================
--- SECTION 22: INITIAL DATA (Optional)
+-- SECTION 24: INITIAL DATA (Optional)
 -- ============================================
 
 -- Insert default admin settings
@@ -542,7 +546,7 @@ INSERT INTO public.admin_settings (key, value) VALUES
 ON CONFLICT (key) DO NOTHING;
 
 -- ============================================
--- SECTION 23: GRANT PERMISSIONS
+-- SECTION 25: GRANT PERMISSIONS
 -- ============================================
 
 -- Grant usage on public schema
