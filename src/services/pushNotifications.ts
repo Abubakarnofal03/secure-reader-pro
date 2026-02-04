@@ -94,17 +94,44 @@ const sendTokenToServer = async (token: string) => {
 
 // Handle navigation when notification is tapped
 const handleNotificationNavigation = (data: any) => {
-  // Example: Navigate to specific screen based on notification data
-  console.log('Notification data:', data);
+  console.log('[PushNotifications] Handling notification tap:', data);
 
-  // TODO: Implement your navigation logic
-  // Examples:
-  // if (data.screen === 'meal') {
-  //   window.location.href = `/meal/${data.mealId}`;
-  // }
-  // if (data.screen === 'stats') {
-  //   window.location.href = '/stats';
-  // }
+  const notificationType = data?.type;
+
+  switch (notificationType) {
+    case 'purchase_request':
+      // Admin tapped on purchase request notification - go to admin approvals
+      window.location.href = '/admin?tab=approvals';
+      break;
+
+    case 'purchase_approved':
+      // User's purchase was approved - go to the content in reader
+      if (data?.content_id) {
+        window.location.href = `/reader/${data.content_id}`;
+      } else {
+        window.location.href = '/library';
+      }
+      break;
+
+    case 'new_content':
+      // New publication available - go to library or reader
+      if (data?.content_id) {
+        window.location.href = `/library?highlight=${data.content_id}`;
+      } else {
+        window.location.href = '/library';
+      }
+      break;
+
+    case 'new_post':
+      // New blog/news/highlight - go to library highlights section
+      window.location.href = '/library?tab=highlights';
+      break;
+
+    default:
+      // Default to library
+      console.log('[PushNotifications] Unknown notification type, navigating to library');
+      window.location.href = '/library';
+  }
 };
 
 // Clean up listeners when no longer needed

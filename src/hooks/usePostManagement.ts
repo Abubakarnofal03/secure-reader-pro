@@ -170,9 +170,9 @@ export function usePostManagement() {
   const togglePublish = useCallback(async (id: string, isPublished: boolean): Promise<boolean> => {
     try {
       const updateData: any = { is_published: isPublished };
+      const existingPost = posts.find(p => p.id === id);
 
       if (isPublished) {
-        const existingPost = posts.find(p => p.id === id);
         if (existingPost && !existingPost.published_at) {
           updateData.published_at = new Date().toISOString();
         }
@@ -184,6 +184,30 @@ export function usePostManagement() {
         .eq('id', id);
 
       if (error) throw error;
+
+      // Send push notification to all users if publishing
+      if (isPublished && existingPost) {
+        try {
+          const tokens = await getAllUserTokens();
+          if (tokens.length > 0) {
+            await supabase.functions.invoke('send-push-notification', {
+              body: {
+                title: `New ${existingPost.category === 'news' ? 'News' : existingPost.category === 'blog' ? 'Blog Post' : 'Highlight'}`,
+                body: existingPost.title,
+                data: {
+                  type: 'new_post',
+                  post_id: id,
+                  category: existingPost.category,
+                },
+                fcmTokens: tokens,
+              },
+            });
+            console.log('Push notification sent for published post');
+          }
+        } catch (notifError) {
+          console.log('Push notification failed (non-critical):', notifError);
+        }
+      }
 
       toast.success(isPublished ? 'Post published' : 'Post unpublished');
       await fetchPosts();
