@@ -65,6 +65,7 @@ interface VirtualizedPdfViewerProps {
   ) => Promise<UserHighlight | null>;
   onDeleteHighlight?: (highlightId: string) => Promise<boolean>;
   onOpenNotesPanel?: () => void;
+  onFirstPageRendered?: () => void;
 }
 
 // Segmented page component - renders a page from a specific segment
@@ -418,6 +419,7 @@ export function VirtualizedPdfViewer({
   onAddHighlight,
   onDeleteHighlight,
   onOpenNotesPanel,
+  onFirstPageRendered,
 }: VirtualizedPdfViewerProps) {
   const [isReady, setIsReady] = useState(false);
 
@@ -442,6 +444,8 @@ export function VirtualizedPdfViewer({
     return Math.round(scaledWidth * ratio);
   }, [scaledWidth]);
 
+  const firstPageRenderedRef = useRef(false);
+
   // Callback when a page renders - cache its actual dimensions
   const handlePageRendered = useCallback((pageNumber: number, renderedHeight: number) => {
     // Calculate and store the ratio (height/width) for this page
@@ -450,7 +454,12 @@ export function VirtualizedPdfViewer({
     if (!pageRatiosRef.current.has(pageNumber)) {
       pageRatiosRef.current.set(pageNumber, ratio);
     }
-  }, [scaledWidth]);
+    // Notify parent that first page has rendered
+    if (!firstPageRenderedRef.current) {
+      firstPageRenderedRef.current = true;
+      onFirstPageRendered?.();
+    }
+  }, [scaledWidth, onFirstPageRendered]);
 
   // Determine if we're in segmented mode
   const isSegmentedMode = !legacyMode && segments && segments.length > 0 && getSegmentUrl && getSegmentForPage;

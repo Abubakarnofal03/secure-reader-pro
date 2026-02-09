@@ -29,6 +29,9 @@ import { useUserNotes } from '@/hooks/useUserNotes';
 import { useUserHighlights, HighlightColor } from '@/hooks/useUserHighlights';
 import { ExtractedToc } from '@/lib/pdfTocExtractor';
 import { HIGHLIGHT_COLORS } from '@/hooks/useUserHighlights';
+import { AnimatePresence } from 'framer-motion';
+import { useTutorial } from '@/hooks/useTutorial';
+import { ReaderTutorialOverlay } from '@/components/tutorial/ReaderTutorialOverlay';
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
@@ -89,6 +92,9 @@ export default function SecureReaderScreen() {
   const [isRecoveringSession, setIsRecoveringSession] = useState(false);
   const [isHighlightMode, setIsHighlightMode] = useState(false);
   const [highlightColor, setHighlightColor] = useState<HighlightColor>('yellow');
+  const [pdfReady, setPdfReady] = useState(false);
+  const { shouldShowPhase2, completePhase2 } = useTutorial();
+  const [showReaderTutorial, setShowReaderTutorial] = useState(false);
   
   // Store the PDF URL in a ref so refreshes don't trigger re-renders
   const pdfUrlRef = useRef<string | null>(null);
@@ -609,24 +615,15 @@ export default function SecureReaderScreen() {
     navigate('/library', { replace: true });
   }, [currentPage, numPages, saveProgressImmediate, navigate]);
 
-  if (loading) {
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-background px-6 safe-top safe-bottom">
-        <div className="relative mb-6">
-          <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-primary shadow-[var(--shadow-lg)]">
-            <BookOpen className="h-10 w-10 text-primary-foreground" />
-          </div>
-          <div className="absolute -bottom-1 -right-1 h-6 w-6 rounded-lg bg-gradient-to-br from-[hsl(43_74%_49%)] to-[hsl(38_72%_55%)]" />
-        </div>
-        <p className="font-display text-lg font-semibold text-foreground mb-2">Loading Publication</p>
-        <p className="text-sm text-muted-foreground mb-6">Preparing secure content...</p>
-        <div className="w-48">
-          <Progress value={loadingProgress} className="h-1.5" />
-        </div>
-        <p className="text-xs text-muted-foreground mt-3">{loadingProgress}%</p>
-      </div>
-    );
-  }
+  // Show loading overlay until PDF actually starts rendering
+  const showLoadingOverlay = loading || (!pdfReady && !error);
+
+  // Trigger reader tutorial when PDF is ready for the first time
+  useEffect(() => {
+    if (pdfReady && shouldShowPhase2) {
+      setShowReaderTutorial(true);
+    }
+  }, [pdfReady, shouldShowPhase2]);
 
   if (error) {
     return (
@@ -658,6 +655,36 @@ export default function SecureReaderScreen() {
         height: '100dvh',
       }}
     >
+      {/* Loading overlay - stays visible until first PDF page renders */}
+      {showLoadingOverlay && (
+        <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center bg-background safe-top safe-bottom">
+          <div className="relative mb-6">
+            <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-primary shadow-[var(--shadow-lg)]">
+              <BookOpen className="h-10 w-10 text-primary-foreground" />
+            </div>
+            <div className="absolute -bottom-1 -right-1 h-6 w-6 rounded-lg bg-gradient-to-br from-[hsl(43_74%_49%)] to-[hsl(38_72%_55%)]" />
+          </div>
+          <p className="font-display text-lg font-semibold text-foreground mb-2">Loading Publication</p>
+          <p className="text-sm text-muted-foreground mb-6">Preparing secure content...</p>
+          <div className="w-48">
+            <Progress value={loadingProgress} className="h-1.5" />
+          </div>
+          <p className="text-xs text-muted-foreground mt-3">{loadingProgress}%</p>
+        </div>
+      )}
+
+      {/* Reader Tutorial - Phase 2 */}
+      <AnimatePresence>
+        {showReaderTutorial && (
+          <ReaderTutorialOverlay
+            onComplete={() => {
+              setShowReaderTutorial(false);
+              completePhase2();
+            }}
+          />
+        )}
+      </AnimatePresence>
+
       <ScrollProgressBar currentPage={currentPage} totalPages={numPages} />
 
       <SecurityWarning
@@ -898,6 +925,7 @@ export default function SecureReaderScreen() {
                 onAddHighlight={addHighlight}
                 onDeleteHighlight={deleteHighlight}
                 onOpenNotesPanel={() => setShowNotesPanel(true)}
+                onFirstPageRendered={() => setPdfReady(true)}
               />
             )}
           
@@ -944,6 +972,7 @@ export default function SecureReaderScreen() {
                   onAddHighlight={addHighlight}
                   onDeleteHighlight={deleteHighlight}
                   onOpenNotesPanel={() => setShowNotesPanel(true)}
+                  onFirstPageRendered={() => setPdfReady(true)}
                 />
               )}
             </Document>
