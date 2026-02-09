@@ -11,8 +11,6 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { ContactSupport } from '@/components/ContactSupport';
 import { Skeleton } from '@/components/ui/skeleton';
 import logo from '@/assets/logo.png';
-import { useTutorial } from '@/hooks/useTutorial';
-import { TutorialOverlay } from '@/components/tutorial/TutorialOverlay';
 
 // Lazy load HighlightsSection to prevent unnecessary network requests on app start
 const HighlightsSection = lazy(() => import('@/components/highlights/HighlightsSection'));
@@ -52,7 +50,6 @@ export default function ContentListScreen() {
   const mainRef = useRef<HTMLDivElement>(null);
   const startY = useRef(0);
   const isPulling = useRef(false);
-  const { shouldShowPhase1, completePhase1 } = useTutorial();
 
   const PULL_THRESHOLD = 80;
 
@@ -173,10 +170,6 @@ export default function ContentListScreen() {
   };
 
   return (
-    <>
-      <AnimatePresence>
-        {shouldShowPhase1 && <TutorialOverlay onComplete={completePhase1} />}
-      </AnimatePresence>
     <div className="flex min-h-screen flex-col bg-background safe-top safe-bottom">
       {/* Header */}
       <header className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm">
@@ -393,6 +386,5 @@ export default function ContentListScreen() {
         onPurchaseSubmitted={fetchContent}
       />
     </div>
-    </>
   );
 }
