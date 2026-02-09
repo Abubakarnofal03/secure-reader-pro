@@ -24,12 +24,12 @@ export function useDeepLinking() {
 
       try {
         const url = new URL(event.url);
-        
+
         // Handle different URL formats:
         // 1. Custom scheme: mycalorics://reset-password?token=...
         // 2. Universal link: https://yourdomain.com/reset-password#access_token=...
         // 3. Push notification deep links: mycalorics://library, mycalorics://reader/123
-        
+
         let pathname = url.pathname;
         let hash = url.hash;
         let search = url.search;
@@ -49,13 +49,17 @@ export function useDeepLinking() {
         const type = url.searchParams.get('type');
 
         // If we have tokens, establish the Supabase session
-        if (accessToken && refreshToken) {
+        // BUT skip this for recovery flows - let ResetPasswordScreen handle it to avoid race conditions
+        // where the token might be consumed here and then fail in the screen component
+        const isRecovery = pathname.includes('reset-password') || type === 'recovery';
+
+        if (accessToken && refreshToken && !isRecovery) {
           console.log('[DeepLinking] Setting session from deep link tokens...');
           const { error } = await supabase.auth.setSession({
             access_token: accessToken,
             refresh_token: refreshToken
           });
-          
+
           if (error) {
             console.error('[DeepLinking] Failed to set session from deep link:', error);
           } else {

@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
+import { ContactSupport } from '@/components/ContactSupport';
 
 export default function SignupScreen() {
   const [name, setName] = useState('');
@@ -20,7 +21,7 @@ export default function SignupScreen() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (password.length < 6) {
       toast({
         title: 'Password too short',
@@ -50,9 +51,9 @@ export default function SignupScreen() {
     });
 
     // Redirect to confirmation pending screen with email
-    navigate('/confirm-email-pending', { 
-      replace: true, 
-      state: { email } 
+    navigate('/confirm-email-pending', {
+      replace: true,
+      state: { email }
     });
   };
 
@@ -206,6 +207,10 @@ export default function SignupScreen() {
             <Shield className="h-3.5 w-3.5" />
             <span>Your information is secure & private</span>
           </motion.div>
+
+          <div className="flex justify-center">
+            <ContactSupport />
+          </div>
         </motion.div>
       </div>
     </div>

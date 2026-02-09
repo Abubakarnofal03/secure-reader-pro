@@ -8,6 +8,7 @@ import { PurchaseDialog } from '@/components/library/PurchaseDialog';
 import { LibraryBookItem } from '@/components/library/LibraryBookItem';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { ContactSupport } from '@/components/ContactSupport';
 import { Skeleton } from '@/components/ui/skeleton';
 import logo from '@/assets/logo.png';
 
@@ -58,11 +59,11 @@ export default function ContentListScreen() {
 
   const fetchContent = useCallback(async (showRefreshIndicator = false) => {
     if (!user) return;
-    
+
     if (showRefreshIndicator) {
       setIsRefreshing(true);
     }
-    
+
     const { data: contentData, error: contentError } = await supabase
       .from('content')
       .select('id, title, description, file_path, price, currency, cover_url, category')
@@ -125,7 +126,7 @@ export default function ContentListScreen() {
 
   const handleTouchMove = useCallback((e: React.TouchEvent) => {
     if (!isPulling.current || isRefreshing) return;
-    
+
     const scrollTop = mainRef.current?.scrollTop ?? 0;
     if (scrollTop > 0) {
       isPulling.current = false;
@@ -181,10 +182,20 @@ export default function ContentListScreen() {
                 Calorics
               </span>
             </div>
-            
+
             {/* Actions */}
             <div className="flex items-center gap-1">
               <ThemeToggle />
+              <ContactSupport>
+                <button
+                  className="h-8 w-8 rounded-full flex items-center justify-center transition-colors hover:bg-muted/50"
+                  aria-label="Contact Support"
+                >
+                  <div className="h-5 w-5 rounded-full border border-muted-foreground/30 flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-foreground/50 transition-colors">
+                    <span className="text-[10px] font-bold">?</span>
+                  </div>
+                </button>
+              </ContactSupport>
               <button
                 onClick={() => navigate('/profile')}
                 className="h-8 w-8 rounded-full transition-colors hover:bg-muted/50"
@@ -204,11 +215,10 @@ export default function ContentListScreen() {
           <div className="flex gap-6">
             <button
               onClick={() => setActiveTab('my-books')}
-              className={`pb-3 text-sm font-medium transition-colors relative ${
-                activeTab === 'my-books'
-                  ? 'text-foreground'
-                  : 'text-muted-foreground hover:text-foreground/70'
-              }`}
+              className={`pb-3 text-sm font-medium transition-colors relative ${activeTab === 'my-books'
+                ? 'text-foreground'
+                : 'text-muted-foreground hover:text-foreground/70'
+                }`}
             >
               Library
               {activeTab === 'my-books' && (
@@ -221,11 +231,10 @@ export default function ContentListScreen() {
             </button>
             <button
               onClick={() => setActiveTab('store')}
-              className={`pb-3 text-sm font-medium transition-colors relative ${
-                activeTab === 'store'
-                  ? 'text-foreground'
-                  : 'text-muted-foreground hover:text-foreground/70'
-              }`}
+              className={`pb-3 text-sm font-medium transition-colors relative ${activeTab === 'store'
+                ? 'text-foreground'
+                : 'text-muted-foreground hover:text-foreground/70'
+                }`}
             >
               Store
               {activeTab === 'store' && (
@@ -238,11 +247,10 @@ export default function ContentListScreen() {
             </button>
             <button
               onClick={() => setActiveTab('highlights')}
-              className={`pb-3 text-sm font-medium transition-colors relative ${
-                activeTab === 'highlights'
-                  ? 'text-foreground'
-                  : 'text-muted-foreground hover:text-foreground/70'
-              }`}
+              className={`pb-3 text-sm font-medium transition-colors relative ${activeTab === 'highlights'
+                ? 'text-foreground'
+                : 'text-muted-foreground hover:text-foreground/70'
+                }`}
             >
               Updates
               {activeTab === 'highlights' && (
@@ -258,16 +266,16 @@ export default function ContentListScreen() {
       </header>
 
       {/* Pull to Refresh Indicator */}
-      <div 
+      <div
         className="flex items-center justify-center overflow-hidden transition-all duration-200"
         style={{ height: pullDistance > 0 ? pullDistance : 0 }}
       >
         <motion.div
-          animate={{ 
+          animate={{
             rotate: isRefreshing ? 360 : (pullDistance / PULL_THRESHOLD) * 180,
             scale: Math.min(pullDistance / PULL_THRESHOLD, 1)
           }}
-          transition={{ 
+          transition={{
             rotate: isRefreshing ? { repeat: Infinity, duration: 1, ease: "linear" } : { duration: 0 }
           }}
         >
@@ -276,7 +284,7 @@ export default function ContentListScreen() {
       </div>
 
       {/* Content */}
-      <main 
+      <main
         ref={mainRef}
         className="flex-1 overflow-auto"
         onTouchStart={handleTouchStart}
@@ -285,7 +293,7 @@ export default function ContentListScreen() {
       >
         {/* Highlights Tab - Lazy Loaded */}
         {activeTab === 'highlights' ? (
-          <Suspense 
+          <Suspense
             fallback={
               <div className="p-4 space-y-3">
                 {[1, 2, 3, 4].map((i) => (
@@ -334,9 +342,9 @@ export default function ContentListScreen() {
           </motion.div>
         ) : (
           <AnimatePresence mode="wait">
-            <motion.div 
+            <motion.div
               key={activeTab}
-              initial={{ opacity: 0 }} 
+              initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.15 }}
@@ -346,9 +354,9 @@ export default function ContentListScreen() {
                 const status = purchaseStatus[item.id];
                 const isPurchased = status === 'purchased';
                 const progress = readingProgress[item.id] || 0;
-                
+
                 if (activeTab === 'my-books' && !isPurchased) return null;
-                
+
                 return (
                   <LibraryBookItem
                     key={item.id}

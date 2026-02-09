@@ -6,6 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { useTheme } from 'next-themes';
 import { TermsAndConditionsDialog } from '@/components/TermsAndConditionsDialog';
+import { ContactSupport } from '@/components/ContactSupport';
 
 export default function ProfileScreen() {
   const { profile, signOut } = useAuth();
@@ -23,7 +24,7 @@ export default function ProfileScreen() {
   return (
     <div className="flex min-h-screen flex-col bg-background safe-top safe-bottom">
       {/* Header */}
-      <header className="sticky top-0 z-50 glass border-b border-border/50">
+      <header className="sticky top-0 z-50 glass border-b border-border/50 flex items-center justify-between">
         <div className="flex h-16 items-center gap-4 px-4">
           <button
             onClick={() => navigate(-1)}
@@ -32,6 +33,19 @@ export default function ProfileScreen() {
             <ChevronRight className="h-5 w-5 rotate-180 text-foreground" />
           </button>
           <h1 className="font-display text-xl font-semibold">Profile</h1>
+        </div>
+
+        <div className="pr-4">
+          <ContactSupport>
+            <button
+              className="h-9 w-9 rounded-xl flex items-center justify-center transition-colors hover:bg-secondary"
+              aria-label="Contact Support"
+            >
+              <div className="h-5 w-5 rounded-full border border-muted-foreground/40 flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-foreground/60 transition-colors">
+                <span className="text-[10px] font-bold">?</span>
+              </div>
+            </button>
+          </ContactSupport>
         </div>
       </header>
 
@@ -44,7 +58,7 @@ export default function ProfileScreen() {
           {/* Profile Card */}
           <div className="relative rounded-2xl border border-border/80 bg-card p-6 shadow-[var(--shadow-lg)] overflow-hidden">
             <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-[hsl(43_74%_49%)] to-[hsl(38_72%_55%)]" />
-            
+
             <div className="flex flex-col items-center text-center">
               <div className="relative">
                 <div className="flex h-24 w-24 items-center justify-center rounded-full bg-primary shadow-[var(--shadow-md)]">

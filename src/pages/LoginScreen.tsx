@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
+import { ContactSupport } from '@/components/ContactSupport';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -97,8 +98,8 @@ export default function LoginScreen() {
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label htmlFor="password" className="text-sm font-medium">Password</Label>
-                  <Link 
-                    to="/forgot-password" 
+                  <Link
+                    to="/forgot-password"
                     className="text-xs font-medium text-primary hover:text-primary/80 transition-colors"
                   >
                     Forgot Password?
@@ -140,6 +141,10 @@ export default function LoginScreen() {
           <div className="mt-8 flex items-center justify-center gap-2 text-xs text-muted-foreground">
             <Shield className="h-3.5 w-3.5" />
             <span>Secure & Private Access</span>
+          </div>
+
+          <div className="flex justify-center">
+            <ContactSupport />
           </div>
         </motion.div>
       </div>
