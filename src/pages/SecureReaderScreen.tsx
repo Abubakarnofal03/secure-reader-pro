@@ -30,7 +30,7 @@ import { useUserHighlights, HighlightColor } from '@/hooks/useUserHighlights';
 import { ExtractedToc } from '@/lib/pdfTocExtractor';
 import { HIGHLIGHT_COLORS } from '@/hooks/useUserHighlights';
 
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
 // PDF.js options for proper rendering of fonts, characters, and embedded content
 const pdfOptions = {
@@ -60,11 +60,11 @@ export default function SecureReaderScreen() {
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const pdfWrapperRef = useRef<HTMLDivElement>(null);
-  
+
   const { isRecording, screenshotDetected, clearScreenshotAlert } = useSecurityMonitor();
   // TEMPORARILY DISABLED for client presentation - set back to true when done
   usePrivacyScreen(false);
-  
+
   const [content, setContent] = useState<ContentDetails | null>(null);
   const [numPages, setNumPages] = useState<number>(0);
   const [loading, setLoading] = useState(true);
@@ -72,7 +72,19 @@ export default function SecureReaderScreen() {
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [baseWidth, setBaseWidth] = useState(window.innerWidth - 32);
-  const [sessionId] = useState(() => crypto.randomUUID().substring(0, 8));
+  // Helper for generating UUIDs
+  const generateUUID = () => {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+      return crypto.randomUUID();
+    }
+    // Fallback for insecure contexts
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+      const r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  };
+
+  const [sessionId] = useState(() => generateUUID().substring(0, 8));
   const [showGoToDialog, setShowGoToDialog] = useState(false);
   const [recentPages, setRecentPages] = useState<number[]>([]);
   const [hasInitializedPage, setHasInitializedPage] = useState(false);
@@ -89,18 +101,18 @@ export default function SecureReaderScreen() {
   const [isRecoveringSession, setIsRecoveringSession] = useState(false);
   const [isHighlightMode, setIsHighlightMode] = useState(false);
   const [highlightColor, setHighlightColor] = useState<HighlightColor>('yellow');
-  
+
   // Store the PDF URL in a ref so refreshes don't trigger re-renders
   const pdfUrlRef = useRef<string | null>(null);
   const expiresAtRef = useRef<number | null>(null);
-  
+
   // Track if we've already loaded content once (for recovery purposes)
   const hasLoadedContentRef = useRef(false);
 
-  const { 
-    containerRef: scrollContainerRef, 
-    registerPage, 
-    currentPage, 
+  const {
+    containerRef: scrollContainerRef,
+    registerPage,
+    currentPage,
   } = useScrollPageDetection({
     totalPages: numPages,
     enabled: numPages > 0,
@@ -130,7 +142,7 @@ export default function SecureReaderScreen() {
   const handleSessionRecovered = useCallback(() => {
     console.log('[SecureReader] Session recovered, refreshing URLs...');
     setIsRecoveringSession(false);
-    
+
     // Refresh segment URLs if we're using segmented content
     if (isSegmented && refreshAllUrls) {
       refreshAllUrls();
@@ -197,10 +209,10 @@ export default function SecureReaderScreen() {
   }, []);
 
   // Width-based zoom - pages re-render at different widths for crisp text
-  const { 
-    zoomLevel, 
-    zoomIn, 
-    zoomOut, 
+  const {
+    zoomLevel,
+    zoomIn,
+    zoomOut,
     resetZoom,
     isZoomed,
   } = usePinchZoom({
@@ -285,7 +297,7 @@ export default function SecureReaderScreen() {
         setBaseWidth(window.innerWidth - 32);
       }
     };
-    
+
     handleResize();
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
@@ -354,7 +366,7 @@ export default function SecureReaderScreen() {
         setLoadingProgress(10);
         const deviceId = await getDeviceId();
         const { data: { session } } = await supabase.auth.getSession();
-        
+
         if (!session) {
           setError('Please log in to view content');
           setLoading(false);
@@ -375,7 +387,7 @@ export default function SecureReaderScreen() {
         }
 
         const hasSegments = segmentCheck && segmentCheck.length > 0;
-        
+
         if (hasSegments) {
           // Segmented content - don't call render-pdf-page, use segment manager instead
           setIsLegacyContent(false);
@@ -415,7 +427,7 @@ export default function SecureReaderScreen() {
               userName: profileData?.name || profileData?.email?.split('@')[0] || 'User',
               userEmail: profileData?.email || '',
               timestamp: new Date().toISOString(),
-              sessionId: crypto.randomUUID().substring(0, 8),
+              sessionId: generateUUID().substring(0, 8),
             },
           });
 
@@ -543,19 +555,19 @@ export default function SecureReaderScreen() {
 
   const goToPage = useCallback(async (page: number) => {
     if (page < 1 || page > numPages) return;
-    
+
     setIsJumpingToPage(true);
     setJumpTargetPage(page);
-    
+
     try {
       // For segmented content, prefetch the target segment first
       if (isSegmented && prefetchSegmentForPage) {
         await prefetchSegmentForPage(page);
       }
-      
+
       // Use virtualizer's scroll method
       viewerApiRef.current?.scrollToPage(page, true);
-      
+
       // Small delay to let the scroll complete
       setTimeout(() => {
         setIsJumpingToPage(false);
@@ -572,17 +584,17 @@ export default function SecureReaderScreen() {
     if (savedProgress) {
       setIsJumpingToPage(true);
       setJumpTargetPage(savedProgress.currentPage);
-      
+
       try {
         // For segmented content, prefetch the target segment first
         if (isSegmented && prefetchSegmentForPage) {
           await prefetchSegmentForPage(savedProgress.currentPage);
         }
-        
+
         // Small delay to ensure viewer is ready
         setTimeout(() => {
           viewerApiRef.current?.scrollToPage(savedProgress.currentPage, true);
-          
+
           setTimeout(() => {
             setIsJumpingToPage(false);
             setJumpTargetPage(null);
@@ -648,7 +660,7 @@ export default function SecureReaderScreen() {
   const pdfSource = content?.signedUrl || null;
 
   return (
-    <div 
+    <div
       ref={containerRef}
       className="flex h-screen flex-col bg-reader-bg secure-content safe-top safe-bottom overflow-hidden"
       style={{
@@ -761,19 +773,19 @@ export default function SecureReaderScreen() {
                 onClick={() => setIsHighlightMode(!isHighlightMode)}
                 className={`
                   flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl transition-colors
-                  ${isHighlightMode 
-                    ? 'bg-primary text-primary-foreground' 
+                  ${isHighlightMode
+                    ? 'bg-primary text-primary-foreground'
                     : 'hover:bg-secondary'
                   }
                 `}
                 title={isHighlightMode ? 'Exit Highlight Mode (click to pick color)' : 'Highlight Mode'}
               >
-                <Highlighter 
-                  className="h-4 w-4 sm:h-5 sm:w-5" 
-                  style={{ 
-                    color: isHighlightMode 
-                      ? undefined 
-                      : HIGHLIGHT_COLORS[highlightColor].border 
+                <Highlighter
+                  className="h-4 w-4 sm:h-5 sm:w-5"
+                  style={{
+                    color: isHighlightMode
+                      ? undefined
+                      : HIGHLIGHT_COLORS[highlightColor].border
                   }}
                 />
               </button>
@@ -785,7 +797,7 @@ export default function SecureReaderScreen() {
               <X className="h-4 w-4 sm:h-5 sm:w-5 text-foreground" />
             </button>
           </div>
-          
+
           {/* Title section - allow shrinking with min-w-0 */}
           <div className="text-center flex-1 min-w-0 mx-1 sm:mx-4">
             <h1 className="line-clamp-1 font-display text-sm sm:text-base font-semibold text-foreground truncate">
@@ -798,7 +810,7 @@ export default function SecureReaderScreen() {
               Page {currentPage} of {numPages || '...'} • Tap to jump
             </button>
           </div>
-          
+
           {/* Zoom Controls - shrink-0 to prevent overflow */}
           <div className="flex items-center gap-0.5 sm:gap-1 bg-muted/50 rounded-lg sm:rounded-xl p-0.5 sm:p-1 shrink-0">
             <button
@@ -831,8 +843,8 @@ export default function SecureReaderScreen() {
       {/* Highlight Mode Indicator */}
       {isHighlightMode && (
         <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 rounded-full bg-card/95 backdrop-blur-sm px-4 py-2 shadow-lg border border-border">
-          <div 
-            className="w-3 h-3 rounded-full" 
+          <div
+            className="w-3 h-3 rounded-full"
             style={{ backgroundColor: HIGHLIGHT_COLORS[highlightColor].border }}
           />
           <span className="text-xs font-medium text-foreground">Highlight Mode</span>
@@ -846,19 +858,19 @@ export default function SecureReaderScreen() {
       )}
 
       {/* PDF Viewer */}
-      <main 
+      <main
         ref={contentRef}
         className="relative flex-1 overflow-hidden"
       >
         <Watermark sessionId={sessionId} />
-        
-        <FloatingPageIndicator 
-          currentPage={currentPage} 
-          totalPages={numPages} 
+
+        <FloatingPageIndicator
+          currentPage={currentPage}
+          totalPages={numPages}
           containerRef={scrollContainerRef}
         />
-        
-        <div 
+
+        <div
           ref={scrollContainerRef}
           className="h-full overflow-x-auto overflow-y-auto overscroll-none"
           style={{
@@ -900,63 +912,63 @@ export default function SecureReaderScreen() {
                 onOpenNotesPanel={() => setShowNotesPanel(true)}
               />
             )}
-          
-          {/* Loading segments state for segmented content */}
-          {!isLegacyContent && !isSegmented && content && isLoadingSegments && (
-            <div className="flex flex-col items-center justify-center py-20">
-              <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
-              <p className="text-sm text-muted-foreground">Loading segments...</p>
-            </div>
-          )}
-          
-          {/* Legacy content: wrap in a single Document */}
-          {isLegacyContent && pdfSource && (
-            <Document
-              file={pdfSource}
-              onLoadSuccess={(loadedDoc) => onDocumentLoadSuccess({ numPages: loadedDoc.numPages }, loadedDoc)}
-              options={pdfOptions}
-              loading={
-                <div className="flex flex-col items-center justify-center py-20">
-                  <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
-                  <p className="text-sm text-muted-foreground">Loading document...</p>
-                </div>
-              }
-              error={
-                <div className="flex flex-col items-center justify-center py-20">
-                  <AlertTriangle className="h-8 w-8 text-destructive mb-3" />
-                  <p className="text-muted-foreground">Failed to load document</p>
-                  <p className="text-xs text-muted-foreground mt-1">The file may be corrupted</p>
-                </div>
-              }
-            >
-              {numPages > 0 && id && (
-                <VirtualizedPdfViewer
-                  numPages={numPages}
-                  pageWidth={pageWidth}
-                  registerPage={registerPage}
-                  scrollContainerRef={scrollContainerRef}
-                  legacyMode={true}
-                  onReady={handleViewerReady}
-                  getHighlightsForPage={getHighlightsForPage}
-                  getNotesForPage={getNotesForPage}
-                  isHighlightMode={isHighlightMode}
-                  highlightColor={highlightColor}
-                  onAddHighlight={addHighlight}
-                  onDeleteHighlight={deleteHighlight}
-                  onOpenNotesPanel={() => setShowNotesPanel(true)}
-                />
-              )}
-            </Document>
-          )}
-          
-          {/* Loading state when content hasn't determined mode yet */}
-          {!content && (
-            <div className="flex flex-col items-center justify-center py-20">
-              <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
-              <p className="text-sm text-muted-foreground">Preparing content...</p>
-            </div>
-          )}
-        </div>
+
+            {/* Loading segments state for segmented content */}
+            {!isLegacyContent && !isSegmented && content && isLoadingSegments && (
+              <div className="flex flex-col items-center justify-center py-20">
+                <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
+                <p className="text-sm text-muted-foreground">Loading segments...</p>
+              </div>
+            )}
+
+            {/* Legacy content: wrap in a single Document */}
+            {isLegacyContent && pdfSource && (
+              <Document
+                file={pdfSource}
+                onLoadSuccess={(loadedDoc) => onDocumentLoadSuccess({ numPages: loadedDoc.numPages }, loadedDoc)}
+                options={pdfOptions}
+                loading={
+                  <div className="flex flex-col items-center justify-center py-20">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
+                    <p className="text-sm text-muted-foreground">Loading document...</p>
+                  </div>
+                }
+                error={
+                  <div className="flex flex-col items-center justify-center py-20">
+                    <AlertTriangle className="h-8 w-8 text-destructive mb-3" />
+                    <p className="text-muted-foreground">Failed to load document</p>
+                    <p className="text-xs text-muted-foreground mt-1">The file may be corrupted</p>
+                  </div>
+                }
+              >
+                {numPages > 0 && id && (
+                  <VirtualizedPdfViewer
+                    numPages={numPages}
+                    pageWidth={pageWidth}
+                    registerPage={registerPage}
+                    scrollContainerRef={scrollContainerRef}
+                    legacyMode={true}
+                    onReady={handleViewerReady}
+                    getHighlightsForPage={getHighlightsForPage}
+                    getNotesForPage={getNotesForPage}
+                    isHighlightMode={isHighlightMode}
+                    highlightColor={highlightColor}
+                    onAddHighlight={addHighlight}
+                    onDeleteHighlight={deleteHighlight}
+                    onOpenNotesPanel={() => setShowNotesPanel(true)}
+                  />
+                )}
+              </Document>
+            )}
+
+            {/* Loading state when content hasn't determined mode yet */}
+            {!content && (
+              <div className="flex flex-col items-center justify-center py-20">
+                <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
+                <p className="text-sm text-muted-foreground">Preparing content...</p>
+              </div>
+            )}
+          </div>
         </div>
       </main>
     </div>
