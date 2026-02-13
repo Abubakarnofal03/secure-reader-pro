@@ -11,19 +11,19 @@ const corsHeaders = {
 
 async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey> {
   const enc = new TextEncoder();
-  const keyMaterial = await crypto.subtle.importKey(
-    "raw", enc.encode(password), "PBKDF2", false, ["deriveKey"],
-  );
+  const keyMaterial = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveKey"]);
   return crypto.subtle.deriveKey(
     { name: "PBKDF2", salt, iterations: 100_000, hash: "SHA-256" },
     keyMaterial,
     { name: "AES-GCM", length: 256 },
-    false, ["encrypt"],
+    false,
+    ["encrypt"],
   );
 }
 
 async function encrypt(
-  data: Uint8Array, password: string,
+  data: Uint8Array,
+  password: string,
 ): Promise<{ ciphertext: Uint8Array; iv: Uint8Array; salt: Uint8Array }> {
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const iv = crypto.getRandomValues(new Uint8Array(12));
@@ -40,14 +40,19 @@ function toBase64(buf: Uint8Array): string {
 
 async function sha256Hex(input: string): Promise<string> {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
-  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
+  return Array.from(new Uint8Array(buf))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 // ── Watermark a single segment ──────────────────────────────────────────────
 
 async function watermarkSegment(
-  pdfBytes: Uint8Array, userName: string, userEmail: string,
-  timestamp: string, sessionId: string,
+  pdfBytes: Uint8Array,
+  userName: string,
+  userEmail: string,
+  timestamp: string,
+  sessionId: string,
 ): Promise<Uint8Array> {
   const pdfDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
@@ -68,7 +73,13 @@ async function watermarkSegment(
     for (let y = -diagonal / 2; y < diagonal; y += spacingY) {
       for (let x = -diagonal / 2; x < diagonal; x += spacingX) {
         page.drawText(watermarkText, {
-          x, y, size: fontSize, font, color, opacity, rotate: angle,
+          x,
+          y,
+          size: fontSize,
+          font,
+          color,
+          opacity,
+          rotate: angle,
         });
       }
     }
@@ -84,7 +95,10 @@ async function validateRequest(req: Request, adminClient: ReturnType<typeof crea
   if (!authHeader) throw { status: 401, error: "Missing authorization header" };
 
   const token = authHeader.replace("Bearer ", "");
-  const { data: { user }, error: authError } = await adminClient.auth.getUser(token);
+  const {
+    data: { user },
+    error: authError,
+  } = await adminClient.auth.getUser(token);
   if (authError || !user) throw { status: 401, error: "Invalid or expired token" };
 
   return user;
@@ -92,11 +106,15 @@ async function validateRequest(req: Request, adminClient: ReturnType<typeof crea
 
 async function validateAccess(
   adminClient: ReturnType<typeof createClient>,
-  userId: string, contentId: string, deviceId?: string,
+  userId: string,
+  contentId: string,
+  deviceId?: string,
 ) {
   const { data: profile, error: profileError } = await adminClient
-    .from("profiles").select("active_device_id, email, name, role")
-    .eq("id", userId).single();
+    .from("profiles")
+    .select("active_device_id, email, name, role")
+    .eq("id", userId)
+    .single();
 
   if (profileError || !profile) throw { status: 404, error: "Profile not found" };
 
@@ -107,8 +125,11 @@ async function validateAccess(
   const isAdmin = profile.role === "admin";
   if (!isAdmin) {
     const { data: access, error: accessError } = await adminClient
-      .from("user_content_access").select("id")
-      .eq("user_id", userId).eq("content_id", contentId).single();
+      .from("user_content_access")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("content_id", contentId)
+      .single();
     if (accessError || !access) throw { status: 403, error: "You don't have access to this content" };
   }
 
@@ -134,10 +155,10 @@ Deno.serve(async (req) => {
     const { content_id, device_id, segment_index } = body;
 
     if (!content_id) {
-      return new Response(
-        JSON.stringify({ error: "Missing content_id" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
+      return new Response(JSON.stringify({ error: "Missing content_id" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     const { profile, isAdmin } = await validateAccess(adminClient, userId, content_id, device_id);
@@ -146,20 +167,21 @@ Deno.serve(async (req) => {
     const { data: contentMeta, error: contentError } = await adminClient
       .from("content")
       .select("title, total_pages, table_of_contents, file_path, is_active, updated_at")
-      .eq("id", content_id).single();
+      .eq("id", content_id)
+      .single();
 
     if (contentError || !contentMeta) {
-      return new Response(
-        JSON.stringify({ error: "Content not found" }),
-        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
+      return new Response(JSON.stringify({ error: "Content not found" }), {
+        status: 404,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     if (!contentMeta.is_active && !isAdmin) {
-      return new Response(
-        JSON.stringify({ error: "Content is not active" }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
+      return new Response(JSON.stringify({ error: "Content is not active" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     // ── Get segments ──
@@ -182,13 +204,16 @@ Deno.serve(async (req) => {
         const { data: cached } = await adminClient
           .from("encrypted_content_cache")
           .select("version_hash")
-          .eq("user_id", userId).eq("content_id", content_id).eq("device_id", device_id)
+          .eq("user_id", userId)
+          .eq("content_id", content_id)
+          .eq("device_id", device_id)
           .maybeSingle();
 
         if (cached?.version_hash === versionHash) {
           return new Response(
             JSON.stringify({
-              cached: true, versionHash,
+              cached: true,
+              versionHash,
               title: contentMeta.title,
               totalPages: contentMeta.total_pages,
               tableOfContents: contentMeta.table_of_contents,
@@ -205,13 +230,15 @@ Deno.serve(async (req) => {
 
       return new Response(
         JSON.stringify({
-          cached: false, versionHash,
+          cached: false,
+          versionHash,
           title: contentMeta.title,
           totalPages: contentMeta.total_pages,
           tableOfContents: contentMeta.table_of_contents,
           segmentCount: segmentList.length || 1,
           // Pass these back so client sends them with each segment request
-          sessionId, timestamp,
+          sessionId,
+          timestamp,
         }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
@@ -228,51 +255,66 @@ Deno.serve(async (req) => {
     if (segmentList.length > 0) {
       const seg = segmentList[segment_index];
       if (!seg) {
-        return new Response(
-          JSON.stringify({ error: `Segment ${segment_index} not found` }),
-          { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-        );
+        return new Response(JSON.stringify({ error: `Segment ${segment_index} not found` }), {
+          status: 404,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
 
       const { data: fileData, error: dlError } = await adminClient.storage
-        .from("content-files").download(seg.file_path);
+        .from("content-files")
+        .download(seg.file_path);
 
       if (dlError || !fileData) {
-        return new Response(
-          JSON.stringify({ error: `Failed to download segment ${segment_index}` }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-        );
+        return new Response(JSON.stringify({ error: `Failed to download segment ${segment_index}` }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
 
       segmentBytes = new Uint8Array(await fileData.arrayBuffer());
     } else {
       // Legacy single-file content (treat as segment 0)
       if (segment_index !== 0) {
-        return new Response(
-          JSON.stringify({ error: "Invalid segment index for single-file content" }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-        );
+        return new Response(JSON.stringify({ error: "Invalid segment index for single-file content" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
 
       const { data: fileData, error: dlError } = await adminClient.storage
-        .from("content-files").download(contentMeta.file_path);
+        .from("content-files")
+        .download(contentMeta.file_path);
 
       if (dlError || !fileData) {
-        return new Response(
-          JSON.stringify({ error: "Failed to download content file" }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-        );
+        return new Response(JSON.stringify({ error: "Failed to download content file" }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
 
       segmentBytes = new Uint8Array(await fileData.arrayBuffer());
     }
 
     // Watermark this segment
-    const watermarkedBytes = await watermarkSegment(
-      segmentBytes, userName, profile.email,
-      timestamp || new Date().toISOString(),
-      sessionId || crypto.randomUUID().substring(0, 8),
-    );
+    let watermarkedBytes: Uint8Array;
+    try {
+      watermarkedBytes = await watermarkSegment(
+        segmentBytes,
+        userName,
+        profile.email,
+        timestamp || new Date().toISOString(),
+        sessionId || crypto.randomUUID().substring(0, 8),
+      );
+    } catch (wmError) {
+      console.error("Watermarking failed:", wmError);
+      return new Response(
+        JSON.stringify({
+          error: "Failed to process PDF for delivery. The file may be corrupted or password-protected.",
+        }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
 
     // Encrypt
     const encryptionPassword = `${userId}:${device_id || "web"}:${content_id}`;
@@ -291,7 +333,7 @@ Deno.serve(async (req) => {
 
     console.log(
       `[deliver-encrypted-pdf] Segment ${segment_index} of ${content_id} to user ${userId}, ` +
-      `size=${ciphertext.length}`,
+        `size=${ciphertext.length}`,
     );
 
     return new Response(
@@ -307,16 +349,16 @@ Deno.serve(async (req) => {
     // Structured error from validateRequest/validateAccess
     if (error && typeof error === "object" && "status" in error) {
       const e = error as { status: number; error: string; code?: string };
-      return new Response(
-        JSON.stringify({ error: e.error, code: e.code }),
-        { status: e.status, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
+      return new Response(JSON.stringify({ error: e.error, code: e.code }), {
+        status: e.status,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     console.error("Error in deliver-encrypted-pdf:", error);
-    return new Response(
-      JSON.stringify({ error: "Internal server error" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-    );
+    return new Response(JSON.stringify({ error: "Internal server error" }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 });
