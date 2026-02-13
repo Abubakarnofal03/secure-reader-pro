@@ -121,6 +121,41 @@ export type Database = {
           },
         ]
       }
+      encrypted_content_cache: {
+        Row: {
+          content_id: string
+          created_at: string
+          device_id: string
+          id: string
+          user_id: string
+          version_hash: string
+        }
+        Insert: {
+          content_id: string
+          created_at?: string
+          device_id: string
+          id?: string
+          user_id: string
+          version_hash: string
+        }
+        Update: {
+          content_id?: string
+          created_at?: string
+          device_id?: string
+          id?: string
+          user_id?: string
+          version_hash?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "encrypted_content_cache_content_id_fkey"
+            columns: ["content_id"]
+            isOneToOne: false
+            referencedRelation: "content"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       posts: {
         Row: {
           author_id: string

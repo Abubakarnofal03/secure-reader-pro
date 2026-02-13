@@ -1,9 +1,6 @@
 project_id = "ssgiyfgbzbivukxtcnjq"
 
-[functions.render-pdf-page]
-verify_jwt = false
-
-[functions.get-segment-url]
+[functions.deliver-encrypted-pdf]
 verify_jwt = false
 
 [functions.send-push-notification]
