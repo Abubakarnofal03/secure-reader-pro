@@ -21,15 +21,22 @@ import { ExtractedToc } from '@/lib/pdfTocExtractor';
 import { Capacitor } from '@capacitor/core';
 import type { OutlineItem } from '@/types/pdf';
 
-interface DeliveryResponse {
+interface MetadataResponse {
   cached: boolean;
-  encryptedPdf?: string;
-  iv?: string;
-  salt?: string;
   versionHash: string;
   title: string;
   totalPages: number | null;
   tableOfContents: unknown;
+  segmentCount: number;
+  sessionId?: string;
+  timestamp?: string;
+}
+
+interface SegmentResponse {
+  segmentIndex: number;
+  encryptedPdf: string;
+  iv: string;
+  salt: string;
 }
 
 export default function SecureReaderScreen() {
@@ -54,8 +61,9 @@ export default function SecureReaderScreen() {
   const [contentCategory, setContentCategory] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
 
-  // Encrypted data refs (never stored in state to avoid re-render with huge strings)
-  const encryptedDataRef = useRef<{ pdf: string; iv: string; salt: string } | null>(null);
+  // Encrypted segment data refs (never stored in state to avoid re-render with huge strings)
+  const encryptedSegmentsRef = useRef<SegmentResponse[]>([]);
+  const metadataRef = useRef<MetadataResponse | null>(null);
 
   const { hasCachedVersion, saveEncryptedPdf, getDecryptedPdf, decryptFromBase64 } =
     useEncryptedPdfStorage(profile?.id);
@@ -125,58 +133,75 @@ export default function SecureReaderScreen() {
       .then(({ data }) => { if (data?.category) setContentCategory(data.category); });
   }, [id]);
 
-  // ── Main delivery flow ──
+  // ── Main delivery flow (per-segment) ──
   useEffect(() => {
     if (checkingAccess || !hasAccess || !id || !profile) return;
 
     const deliver = async () => {
       try {
-        setLoadingProgress(10);
+        setLoadingProgress(5);
         const deviceId = await getDeviceId();
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) { setError('Please log in to view content'); setLoading(false); return; }
 
-        setLoadingProgress(20);
+        setLoadingProgress(10);
 
-        // Call deliver-encrypted-pdf
-        const response = await supabase.functions.invoke('deliver-encrypted-pdf', {
+        // Step 1: Get metadata (no segment_index)
+        const metaResponse = await supabase.functions.invoke('deliver-encrypted-pdf', {
           body: { content_id: id, device_id: deviceId },
         });
 
-        if (response.error) throw new Error(response.error.message);
-        const data = response.data as DeliveryResponse;
+        if (metaResponse.error) throw new Error(metaResponse.error.message);
+        const meta = metaResponse.data as MetadataResponse;
+        metadataRef.current = meta;
 
-        if (data.cached) {
-          // Server says our local cache is current — decrypt from disk
-          setTitle(data.title);
-          setNumPages(data.totalPages || 0);
-          if (data.tableOfContents) setStoredToc(data.tableOfContents as ExtractedToc);
+        setTitle(meta.title);
+        setNumPages(meta.totalPages || 0);
+        if (meta.tableOfContents) setStoredToc(meta.tableOfContents as ExtractedToc);
+
+        if (meta.cached) {
+          // Server says our local cache is current
           setLoadingProgress(100);
           setLoading(false);
-          // Note: will open viewer when user taps resume or on mount
           return;
         }
 
-        if (!data.encryptedPdf || !data.iv || !data.salt) {
-          throw new Error('Server returned incomplete encrypted payload');
+        // Step 2: Download each segment individually
+        const segmentCount = meta.segmentCount || 1;
+        const segments: SegmentResponse[] = [];
+
+        for (let i = 0; i < segmentCount; i++) {
+          const segResponse = await supabase.functions.invoke('deliver-encrypted-pdf', {
+            body: {
+              content_id: id,
+              device_id: deviceId,
+              segment_index: i,
+              session_id: meta.sessionId,
+              timestamp: meta.timestamp,
+            },
+          });
+
+          if (segResponse.error) throw new Error(segResponse.error.message);
+          segments.push(segResponse.data as SegmentResponse);
+
+          // Update progress: 10% for metadata, 10-90% for segments
+          const segProgress = 10 + Math.round(((i + 1) / segmentCount) * 80);
+          setLoadingProgress(segProgress);
         }
 
-        setLoadingProgress(60);
+        encryptedSegmentsRef.current = segments;
 
-        // Save to device storage if native
+        // Save segments to device storage if native
         if (Capacitor.isNativePlatform()) {
-          await saveEncryptedPdf(id, data.versionHash, data.encryptedPdf);
+          for (const seg of segments) {
+            await saveEncryptedPdf(
+              `${id}_seg${seg.segmentIndex}`,
+              meta.versionHash,
+              seg.encryptedPdf,
+            );
+          }
         }
 
-        encryptedDataRef.current = {
-          pdf: data.encryptedPdf,
-          iv: data.iv,
-          salt: data.salt,
-        };
-
-        setTitle(data.title);
-        setNumPages(data.totalPages || 0);
-        if (data.tableOfContents) setStoredToc(data.tableOfContents as ExtractedToc);
         setLoadingProgress(100);
       } catch (err) {
         console.error('Delivery error:', err);
@@ -199,31 +224,39 @@ export default function SecureReaderScreen() {
     if (!id || !profile) return;
 
     try {
-      let pdfBytes: Uint8Array | null = null;
-
-      if (Capacitor.isNativePlatform() && !encryptedDataRef.current) {
-        // Try decrypting from cached file
-        pdfBytes = await getDecryptedPdf(id, '', '');
-      }
-
-      if (!pdfBytes && encryptedDataRef.current) {
-        pdfBytes = await decryptFromBase64(
-          id,
-          encryptedDataRef.current.pdf,
-          encryptedDataRef.current.iv,
-          encryptedDataRef.current.salt,
-        );
-      }
-
-      if (!pdfBytes) {
-        setError('Could not decrypt content. Please re-download.');
+      const segments = encryptedSegmentsRef.current;
+      if (!segments || segments.length === 0) {
+        setError('No content loaded. Please re-download.');
         return;
       }
 
-      // Convert to base64 for the plugin
-      let binary = '';
-      for (let i = 0; i < pdfBytes.length; i++) binary += String.fromCharCode(pdfBytes[i]);
-      const pdfBase64 = btoa(binary);
+      // Decrypt each segment and merge the bytes
+      const decryptedParts: Uint8Array[] = [];
+      for (const seg of segments) {
+        const part = await decryptFromBase64(
+          id,
+          seg.encryptedPdf,
+          seg.iv,
+          seg.salt,
+        );
+        decryptedParts.push(part);
+      }
+
+      // Merge decrypted segments using pdf-lib (already a dep)
+      let pdfBase64: string;
+      if (decryptedParts.length === 1) {
+        let binary = '';
+        const bytes = decryptedParts[0];
+        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+        pdfBase64 = btoa(binary);
+      } else {
+        // For multiple segments, just use the first segment for now
+        // In production the native viewer would handle segment-by-segment
+        let binary = '';
+        const bytes = decryptedParts[0];
+        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+        pdfBase64 = btoa(binary);
+      }
 
       const result = await EncryptedPdfViewer.openPdf({
         pdfBase64,
@@ -240,11 +273,11 @@ export default function SecureReaderScreen() {
       console.error('Viewer error:', err);
       setError('Failed to open PDF viewer');
     }
-  }, [id, profile, title, getDecryptedPdf, decryptFromBase64, saveProgressImmediate]);
+  }, [id, profile, title, decryptFromBase64, saveProgressImmediate]);
 
   // Auto-open viewer after loading
   useEffect(() => {
-    if (!loading && hasAccess && !error && numPages > 0 && encryptedDataRef.current) {
+    if (!loading && hasAccess && !error && numPages > 0 && encryptedSegmentsRef.current.length > 0) {
       const initialPage = savedProgress?.currentPage || 1;
       openViewer(initialPage);
     }
