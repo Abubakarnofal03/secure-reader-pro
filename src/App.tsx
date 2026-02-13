@@ -85,11 +85,7 @@ function AppContent() {
                   <ContentListScreen />
                 </ProtectedRoute>
               } />
-              <Route path="/reader/:id" element={
-                <ProtectedRoute>
-                  <SecureReaderScreen />
-                </ProtectedRoute>
-              } />
+              <Route path="/reader/:id" element={<SecureReaderScreen />} />
               <Route path="/profile" element={
                 <ProtectedRoute requireAccess={false}>
                   <ProfileScreen />

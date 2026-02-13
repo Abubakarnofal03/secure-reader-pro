@@ -1,4 +1,4 @@
-import { ChevronRight, CheckCircle, Clock, BookOpen, FileText } from 'lucide-react';
+import { ChevronRight, CheckCircle, Clock, BookOpen, FileText, Download } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { getCategoryConfig } from '@/lib/categories';
 import { formatPrice } from '@/lib/currency';
@@ -12,7 +12,7 @@ interface LibraryBookItemProps {
   currency: string;
   status: 'purchased' | 'pending' | 'rejected' | null;
   progress?: number; // 0-100
-  lastAccessed?: string;
+  isDownloaded?: boolean;
   onClick: () => void;
   index: number;
   showInMyBooks?: boolean;
@@ -25,6 +25,7 @@ export function LibraryBookItem({
   price,
   status,
   progress = 0,
+  isDownloaded = false,
   onClick,
   index,
   showInMyBooks = false,
@@ -121,6 +122,13 @@ export function LibraryBookItem({
         {showInMyBooks && isUnread && (
           <div className="absolute top-1 right-1">
             <FileText className="h-4 w-4 text-primary-foreground/80" />
+          </div>
+        )}
+
+        {/* Downloaded indicator */}
+        {showInMyBooks && isDownloaded && (
+          <div className="absolute bottom-1 right-1">
+            <Download className="h-3.5 w-3.5 text-primary-foreground/70" />
           </div>
         )}
       </div>

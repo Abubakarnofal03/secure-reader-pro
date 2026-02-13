@@ -10,6 +10,7 @@ import { ThemeToggle } from '@/components/ThemeToggle';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { ContactSupport } from '@/components/ContactSupport';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useEncryptedPdfStorage } from '@/hooks/useEncryptedPdfStorage';
 import logo from '@/assets/logo.png';
 
 // Lazy load HighlightsSection to prevent unnecessary network requests on app start
@@ -43,6 +44,7 @@ export default function ContentListScreen() {
   const [loading, setLoading] = useState(true);
   const [purchaseStatus, setPurchaseStatus] = useState<PurchaseStatus>({});
   const [readingProgress, setReadingProgress] = useState<ReadingProgress>({});
+  const [downloadedIds, setDownloadedIds] = useState<Set<string>>(new Set());
   const [selectedContent, setSelectedContent] = useState<ContentItem | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('my-books');
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -50,11 +52,16 @@ export default function ContentListScreen() {
   const mainRef = useRef<HTMLDivElement>(null);
   const startY = useRef(0);
   const isPulling = useRef(false);
+  const { listDownloadedContent } = useEncryptedPdfStorage();
 
   const PULL_THRESHOLD = 80;
 
   useEffect(() => {
     fetchContent();
+    // Check which books are downloaded locally
+    listDownloadedContent().then((metas) => {
+      setDownloadedIds(new Set(metas.map((m) => m.contentId)));
+    });
   }, [user]);
 
   const fetchContent = useCallback(async (showRefreshIndicator = false) => {
@@ -357,22 +364,23 @@ export default function ContentListScreen() {
 
                 if (activeTab === 'my-books' && !isPurchased) return null;
 
-                return (
-                  <LibraryBookItem
-                    key={item.id}
-                    id={item.id}
-                    title={item.title}
-                    coverUrl={item.cover_url}
-                    category={item.category}
-                    price={item.price}
-                    currency={item.currency}
-                    status={status}
-                    progress={progress}
-                    onClick={() => handleContentClick(item)}
-                    index={index}
-                    showInMyBooks={activeTab === 'my-books'}
-                  />
-                );
+                  return (
+                    <LibraryBookItem
+                      key={item.id}
+                      id={item.id}
+                      title={item.title}
+                      coverUrl={item.cover_url}
+                      category={item.category}
+                      price={item.price}
+                      currency={item.currency}
+                      status={status}
+                      progress={progress}
+                      isDownloaded={downloadedIds.has(item.id)}
+                      onClick={() => handleContentClick(item)}
+                      index={index}
+                      showInMyBooks={activeTab === 'my-books'}
+                    />
+                  );
               })}
             </motion.div>
           </AnimatePresence>

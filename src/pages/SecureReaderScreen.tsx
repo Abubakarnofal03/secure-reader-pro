@@ -16,8 +16,8 @@ import { usePrivacyScreen } from '@/hooks/usePrivacyScreen';
 import { useSessionRecovery } from '@/hooks/useSessionRecovery';
 import { useUserNotes } from '@/hooks/useUserNotes';
 import { useEncryptedPdfStorage } from '@/hooks/useEncryptedPdfStorage';
+import type { CachedContentMeta } from '@/hooks/useEncryptedPdfStorage';
 import { EncryptedPdfViewer } from '@/plugins/encrypted-pdf-viewer';
-import { ExtractedToc } from '@/lib/pdfTocExtractor';
 import { Capacitor } from '@capacitor/core';
 import type { OutlineItem } from '@/types/pdf';
 
@@ -42,31 +42,43 @@ interface SegmentResponse {
 export default function SecureReaderScreen() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { profile, signOut } = useAuth();
+  const { user, profile, signOut } = useAuth();
 
   const { isRecording, screenshotDetected, clearScreenshotAlert } = useSecurityMonitor();
-  usePrivacyScreen(true); // Re-enabled for production
+  usePrivacyScreen(true);
 
   const [title, setTitle] = useState('');
   const [numPages, setNumPages] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadingProgress, setLoadingProgress] = useState(0);
+  const [loadingMessage, setLoadingMessage] = useState('Checking local cache...');
   const [error, setError] = useState<string | null>(null);
-  const [hasAccess, setHasAccess] = useState(false);
-  const [checkingAccess, setCheckingAccess] = useState(true);
   const [showGoToDialog, setShowGoToDialog] = useState(false);
   const [showToc, setShowToc] = useState(false);
   const [showNotesPanel, setShowNotesPanel] = useState(false);
-  const [storedToc, setStoredToc] = useState<ExtractedToc | null>(null);
+  const [storedToc, setStoredToc] = useState<OutlineItem[] | null>(null);
   const [contentCategory, setContentCategory] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
 
-  // Encrypted segment data refs (never stored in state to avoid re-render with huge strings)
-  const encryptedSegmentsRef = useRef<SegmentResponse[]>([]);
-  const metadataRef = useRef<MetadataResponse | null>(null);
+  // Track whether we have content ready to view (from cache or download)
+  const [contentReady, setContentReady] = useState(false);
 
-  const { hasCachedVersion, saveEncryptedPdf, getDecryptedPdf, decryptFromBase64 } =
-    useEncryptedPdfStorage(profile?.id);
+  // For web fallback: keep encrypted segments in memory
+  const encryptedSegmentsRef = useRef<SegmentResponse[]>([]);
+  const cachedMetaRef = useRef<CachedContentMeta | null>(null);
+
+  const {
+    getStoredContentMeta,
+    saveSegment,
+    saveContentMeta,
+    getDecryptedPdf,
+    decryptFromBase64,
+    deleteContent,
+    cleanupOldVersions,
+  } = useEncryptedPdfStorage();
+
+  const isLoggedIn = !!user && !!profile;
+  const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
 
   const {
     notes,
@@ -75,7 +87,7 @@ export default function SecureReaderScreen() {
     addNote,
     updateNote,
     deleteNote,
-  } = useUserNotes({ contentId: id, enabled: hasAccess });
+  } = useUserNotes({ contentId: id, enabled: isLoggedIn && contentReady });
 
   const {
     savedProgress,
@@ -87,90 +99,112 @@ export default function SecureReaderScreen() {
   } = useReadingProgress({ contentId: id, totalPages: numPages });
 
   useSessionRecovery({
-    enabled: hasAccess && !loading,
+    enabled: isLoggedIn && contentReady && !loading,
     onSessionRecovered: () => console.log('[SecureReader] Session recovered'),
     onRecoveryFailed: (err) => console.error('[SecureReader] Recovery failed:', err),
   });
 
-  const effectiveOutline: OutlineItem[] = storedToc?.items || [];
-  const effectiveHasOutline = (storedToc?.items.length || 0) > 0;
+  const effectiveOutline: OutlineItem[] = storedToc || [];
+  const effectiveHasOutline = (storedToc?.length || 0) > 0;
 
-  // ── Access check ──
-  useEffect(() => {
-    if (!id || !profile) { setCheckingAccess(false); return; }
-
-    const check = async () => {
-      try {
-        if (profile.role === 'admin') { setHasAccess(true); setCheckingAccess(false); return; }
-
-        const { data, error: err } = await supabase
-          .from('user_content_access')
-          .select('id')
-          .eq('user_id', profile.id)
-          .eq('content_id', id)
-          .maybeSingle();
-
-        if (err) { setError('Failed to verify content access'); setCheckingAccess(false); return; }
-        if (!data) {
-          setError('You have not purchased this content. Please purchase it from the library to access.');
-          setLoading(false);
-        } else {
-          setHasAccess(true);
-        }
-        setCheckingAccess(false);
-      } catch {
-        setError('Failed to verify content access');
-        setCheckingAccess(false);
-      }
-    };
-    check();
-  }, [id, profile]);
-
-  // ── Fetch category ──
+  // ── Main offline-first flow ──
   useEffect(() => {
     if (!id) return;
-    supabase.from('content').select('category').eq('id', id).single()
-      .then(({ data }) => { if (data?.category) setContentCategory(data.category); });
-  }, [id]);
 
-  // ── Main delivery flow (per-segment) ──
-  useEffect(() => {
-    if (checkingAccess || !hasAccess || !id || !profile) return;
-
-    const deliver = async () => {
+    const run = async () => {
       try {
+        // Step 1: Check local cache
+        setLoadingMessage('Checking local cache...');
         setLoadingProgress(5);
-        const deviceId = await getDeviceId();
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) { setError('Please log in to view content'); setLoading(false); return; }
 
+        const cachedMeta = await getStoredContentMeta(id);
+
+        if (cachedMeta) {
+          // We have a cached version
+          cachedMetaRef.current = cachedMeta;
+          setTitle(cachedMeta.title);
+          setNumPages(cachedMeta.totalPages);
+          if (cachedMeta.tableOfContents) setStoredToc(cachedMeta.tableOfContents);
+
+          // Step 2a: If online AND logged in, verify access
+          if (isOnline && isLoggedIn) {
+            setLoadingMessage('Verifying access...');
+            setLoadingProgress(15);
+
+            const isAdmin = profile.role === 'admin';
+            if (!isAdmin) {
+              const { data: accessData } = await supabase
+                .from('user_content_access')
+                .select('id')
+                .eq('user_id', profile.id)
+                .eq('content_id', id)
+                .maybeSingle();
+
+              if (!accessData) {
+                // Access revoked — delete cache
+                await deleteContent(id);
+                setError('Your access to this content has been revoked.');
+                setLoading(false);
+                return;
+              }
+            }
+          }
+
+          // Step 3: Content is cached and access is valid (or we're offline/logged-out)
+          setLoadingProgress(100);
+          setContentReady(true);
+          setLoading(false);
+          return;
+        }
+
+        // Step 4: NOT cached — require login
+        if (!isLoggedIn) {
+          navigate('/login', { state: { from: { pathname: `/reader/${id}` } }, replace: true });
+          return;
+        }
+
+        // Step 4a: Download from server
+        setLoadingMessage('Connecting to server...');
         setLoadingProgress(10);
 
-        // Step 1: Get metadata (no segment_index)
+        const deviceId = await getDeviceId();
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          setError('Please log in to view content');
+          setLoading(false);
+          return;
+        }
+
+        // Get metadata
         const metaResponse = await supabase.functions.invoke('deliver-encrypted-pdf', {
           body: { content_id: id, device_id: deviceId },
         });
 
         if (metaResponse.error) throw new Error(metaResponse.error.message);
         const meta = metaResponse.data as MetadataResponse;
-        metadataRef.current = meta;
 
         setTitle(meta.title);
         setNumPages(meta.totalPages || 0);
-        if (meta.tableOfContents) setStoredToc(meta.tableOfContents as ExtractedToc);
+        if (meta.tableOfContents) setStoredToc(meta.tableOfContents as OutlineItem[]);
+
+        // Fetch category
+        supabase.from('content').select('category').eq('id', id).single()
+          .then(({ data }) => { if (data?.category) setContentCategory(data.category); });
 
         if (meta.cached) {
-          // Server says our local cache is current
-          setLoadingProgress(100);
-          setLoading(false);
-          return;
+          // Server says our local cache is current — but we don't have it locally?
+          // This means the cache record exists server-side but files were cleared.
+          // Re-download by NOT returning.
         }
 
-        // Step 2: Download each segment individually
+        // Download each segment
         const segmentCount = meta.segmentCount || 1;
         const segments: SegmentResponse[] = [];
+        const segmentMetas: CachedContentMeta['segments'] = [];
 
         for (let i = 0; i < segmentCount; i++) {
+          setLoadingMessage(`Downloading segment ${i + 1} of ${segmentCount}...`);
+
           const segResponse = await supabase.functions.invoke('deliver-encrypted-pdf', {
             body: {
               content_id: id,
@@ -182,29 +216,48 @@ export default function SecureReaderScreen() {
           });
 
           if (segResponse.error) throw new Error(segResponse.error.message);
-          segments.push(segResponse.data as SegmentResponse);
+          const seg = segResponse.data as SegmentResponse;
+          segments.push(seg);
 
-          // Update progress: 10% for metadata, 10-90% for segments
+          // Save to device storage (native only)
+          if (Capacitor.isNativePlatform()) {
+            const fileName = await saveSegment(id, meta.versionHash, seg.segmentIndex, seg.encryptedPdf);
+            segmentMetas.push({
+              segmentIndex: seg.segmentIndex,
+              iv: seg.iv,
+              salt: seg.salt,
+              fileName,
+            });
+          }
+
           const segProgress = 10 + Math.round(((i + 1) / segmentCount) * 80);
           setLoadingProgress(segProgress);
         }
 
         encryptedSegmentsRef.current = segments;
 
-        // Save segments to device storage if native
+        // Save full metadata (native only)
         if (Capacitor.isNativePlatform()) {
-          for (const seg of segments) {
-            await saveEncryptedPdf(
-              `${id}_seg${seg.segmentIndex}`,
-              meta.versionHash,
-              seg.encryptedPdf,
-            );
-          }
+          const fullMeta: CachedContentMeta = {
+            versionHash: meta.versionHash,
+            contentId: id,
+            userId: profile.id,
+            title: meta.title,
+            totalPages: meta.totalPages || 0,
+            tableOfContents: (meta.tableOfContents as OutlineItem[]) || null,
+            segments: segmentMetas,
+          };
+          await saveContentMeta(fullMeta);
+          cachedMetaRef.current = fullMeta;
+
+          // Clean up old version files
+          await cleanupOldVersions(id, meta.versionHash);
         }
 
         setLoadingProgress(100);
+        setContentReady(true);
       } catch (err) {
-        console.error('Delivery error:', err);
+        console.error('Reader error:', err);
         if (err instanceof Error && err.message.includes('DEVICE_MISMATCH')) {
           await signOut();
           navigate('/login', { replace: true });
@@ -216,47 +269,71 @@ export default function SecureReaderScreen() {
       }
     };
 
-    deliver();
-  }, [checkingAccess, hasAccess, id, profile, signOut, navigate, saveEncryptedPdf]);
+    run();
+  }, [id, isLoggedIn, isOnline]);
+
+  // ── Fetch category when logged in ──
+  useEffect(() => {
+    if (!id || !isLoggedIn) return;
+    supabase.from('content').select('category').eq('id', id).single()
+      .then(({ data }) => { if (data?.category) setContentCategory(data.category); });
+  }, [id, isLoggedIn]);
 
   // ── Open native viewer ──
   const openViewer = useCallback(async (initialPage = 1) => {
-    if (!id || !profile) return;
+    if (!id) return;
 
     try {
-      const segments = encryptedSegmentsRef.current;
-      if (!segments || segments.length === 0) {
-        setError('No content loaded. Please re-download.');
+      let pdfBytes: Uint8Array | null = null;
+
+      // Try loading from device cache first (native)
+      if (Capacitor.isNativePlatform()) {
+        pdfBytes = await getDecryptedPdf(id);
+      }
+
+      // Fallback: decrypt from in-memory segments (web or if cache read failed)
+      if (!pdfBytes && encryptedSegmentsRef.current.length > 0) {
+        const userId = cachedMetaRef.current?.userId || profile?.id;
+        if (!userId) {
+          setError('Cannot decrypt content — user identity unavailable.');
+          return;
+        }
+
+        const decryptedParts: Uint8Array[] = [];
+        for (const seg of encryptedSegmentsRef.current) {
+          const part = await decryptFromBase64(
+            id,
+            userId,
+            seg.encryptedPdf,
+            seg.iv,
+            seg.salt,
+          );
+          decryptedParts.push(part);
+        }
+
+        if (decryptedParts.length === 1) {
+          pdfBytes = decryptedParts[0];
+        } else {
+          const totalLen = decryptedParts.reduce((sum, p) => sum + p.length, 0);
+          const merged = new Uint8Array(totalLen);
+          let offset = 0;
+          for (const part of decryptedParts) {
+            merged.set(part, offset);
+            offset += part.length;
+          }
+          pdfBytes = merged;
+        }
+      }
+
+      if (!pdfBytes) {
+        setError('No content available. Please re-download.');
         return;
       }
 
-      // Decrypt each segment and merge the bytes
-      const decryptedParts: Uint8Array[] = [];
-      for (const seg of segments) {
-        const part = await decryptFromBase64(
-          id,
-          seg.encryptedPdf,
-          seg.iv,
-          seg.salt,
-        );
-        decryptedParts.push(part);
-      }
-
-      // Merge decrypted segments using pdf-lib (already a dep)
-      let pdfBase64: string;
-      if (decryptedParts.length === 1) {
-        let binary = '';
-        const bytes = decryptedParts[0];
-        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-        pdfBase64 = btoa(binary);
-      } else {
-        // For multiple segments, just use the first segment for now
-        // In production the native viewer would handle segment-by-segment
-        let binary = '';
-        const bytes = decryptedParts[0];
-        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-        pdfBase64 = btoa(binary);
-      }
+      // Convert to base64 for the viewer
+      let binary = '';
+      for (let i = 0; i < pdfBytes.length; i++) binary += String.fromCharCode(pdfBytes[i]);
+      const pdfBase64 = btoa(binary);
 
       const result = await EncryptedPdfViewer.openPdf({
         pdfBase64,
@@ -264,31 +341,30 @@ export default function SecureReaderScreen() {
         initialPage,
       });
 
-      // Save progress when viewer closes
       if (result.lastPage > 0) {
         setCurrentPage(result.lastPage);
-        saveProgressImmediate(result.lastPage);
+        if (isLoggedIn) saveProgressImmediate(result.lastPage);
       }
     } catch (err) {
       console.error('Viewer error:', err);
       setError('Failed to open PDF viewer');
     }
-  }, [id, profile, title, decryptFromBase64, saveProgressImmediate]);
+  }, [id, title, profile, getDecryptedPdf, decryptFromBase64, saveProgressImmediate, isLoggedIn]);
 
-  // Auto-open viewer after loading
+  // Auto-open viewer after content is ready
   useEffect(() => {
-    if (!loading && hasAccess && !error && numPages > 0 && encryptedSegmentsRef.current.length > 0) {
+    if (contentReady && !error && numPages > 0) {
       const initialPage = savedProgress?.currentPage || 1;
       openViewer(initialPage);
     }
-  }, [loading, hasAccess, error, numPages, openViewer, savedProgress]);
+  }, [contentReady, error, numPages, openViewer, savedProgress]);
 
-  // ── Save progress on current page change ──
+  // Save progress on page change (only when logged in)
   useEffect(() => {
-    if (currentPage > 0 && numPages > 0) saveProgress(currentPage);
-  }, [currentPage, numPages, saveProgress]);
+    if (currentPage > 0 && numPages > 0 && isLoggedIn) saveProgress(currentPage);
+  }, [currentPage, numPages, saveProgress, isLoggedIn]);
 
-  // ── Keyboard / context menu prevention ──
+  // Keyboard / context menu prevention
   useEffect(() => {
     const prevent = (e: Event) => { e.preventDefault(); return false; };
     const preventKey = (e: KeyboardEvent) => {
@@ -317,9 +393,9 @@ export default function SecureReaderScreen() {
   }, [savedProgress, openViewer, dismissResumePrompt]);
 
   const handleClose = useCallback(() => {
-    if (currentPage > 0 && numPages > 0) saveProgressImmediate(currentPage);
+    if (currentPage > 0 && numPages > 0 && isLoggedIn) saveProgressImmediate(currentPage);
     navigate('/library', { replace: true });
-  }, [currentPage, numPages, saveProgressImmediate, navigate]);
+  }, [currentPage, numPages, saveProgressImmediate, navigate, isLoggedIn]);
 
   // ── Loading state ──
   if (loading) {
@@ -332,7 +408,7 @@ export default function SecureReaderScreen() {
           <div className="absolute -bottom-1 -right-1 h-6 w-6 rounded-lg bg-gradient-to-br from-[hsl(43_74%_49%)] to-[hsl(38_72%_55%)]" />
         </div>
         <p className="font-display text-lg font-semibold text-foreground mb-2">Loading Publication</p>
-        <p className="text-sm text-muted-foreground mb-6">Preparing secure content...</p>
+        <p className="text-sm text-muted-foreground mb-6">{loadingMessage}</p>
         <div className="w-48"><Progress value={loadingProgress} className="h-1.5" /></div>
         <p className="text-xs text-muted-foreground mt-3">{loadingProgress}%</p>
       </div>
@@ -357,7 +433,7 @@ export default function SecureReaderScreen() {
     );
   }
 
-  // ── Main reader UI (lightweight — native viewer handles PDF rendering) ──
+  // ── Main reader UI ──
   return (
     <div
       className="flex h-screen flex-col bg-background safe-top safe-bottom"
@@ -465,7 +541,7 @@ export default function SecureReaderScreen() {
         </div>
       </header>
 
-      {/* Main content area — simple prompt to open native viewer */}
+      {/* Main content area */}
       <main className="flex-1 flex items-center justify-center p-6">
         <div className="text-center space-y-4">
           <BookOpen className="h-16 w-16 text-muted-foreground mx-auto" />
