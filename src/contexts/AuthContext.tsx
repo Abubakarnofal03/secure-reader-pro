@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
-import { getDeviceId } from '@/lib/device';
+import { getDeviceId, clearDeviceId } from '@/lib/device';
 
 interface Profile {
   id: string;
@@ -290,7 +290,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signOut = async () => {
-    // Clear device ID from profile before signing out (server-side session invalidation)
+    // Clear device ID from profile before signing out
     if (user) {
       await supabase
         .from('profiles')
@@ -298,8 +298,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .eq('id', user.id);
     }
     
-    // NOTE: Do NOT clear local device ID -- it's part of the encryption key
-    // for offline-accessible PDFs. Clearing it would make cached content undecryptable.
+    // Clear local device ID using the storage utility
+    await clearDeviceId();
     
     await supabase.auth.signOut();
     setUser(null);

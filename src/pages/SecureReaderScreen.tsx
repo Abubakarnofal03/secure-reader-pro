@@ -1,93 +1,182 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { X, Loader2, AlertTriangle, BookOpen, StickyNote, Menu } from 'lucide-react';
+import { X, Loader2, AlertTriangle, ZoomIn, ZoomOut, Menu, BookOpen, RefreshCw, StickyNote, Highlighter } from 'lucide-react';
+import { Document, pdfjs } from 'react-pdf';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
+import { Watermark } from '@/components/Watermark';
 import { SecurityWarning } from '@/components/SecurityWarning';
 import { GoToPageDialog } from '@/components/reader/GoToPageDialog';
 import { ResumeReadingToast } from '@/components/reader/ResumeReadingToast';
+import { ScrollProgressBar } from '@/components/reader/ScrollProgressBar';
+import { FloatingPageIndicator } from '@/components/reader/FloatingPageIndicator';
 import { TableOfContents } from '@/components/reader/TableOfContents';
+import { VirtualizedPdfViewer, VirtualizedPdfViewerApi } from '@/components/reader/VirtualizedPdfViewer';
 import { NotesPanel } from '@/components/reader/NotesPanel';
+import { HighlightColorPicker } from '@/components/reader/HighlightColorPicker';
 import { Progress } from '@/components/ui/progress';
 import { getDeviceId } from '@/lib/device';
 import { useSecurityMonitor } from '@/hooks/useSecurityMonitor';
+import { usePinchZoom } from '@/hooks/usePinchZoom';
 import { useReadingProgress } from '@/hooks/useReadingProgress';
 import { usePrivacyScreen } from '@/hooks/usePrivacyScreen';
+import { useScrollPageDetection } from '@/hooks/useScrollPageDetection';
+import { usePdfOutline, OutlineItem } from '@/hooks/usePdfOutline';
+import { useSignedUrlRefresh } from '@/hooks/useSignedUrlRefresh';
+import { useSegmentManager } from '@/hooks/useSegmentManager';
 import { useSessionRecovery } from '@/hooks/useSessionRecovery';
 import { useUserNotes } from '@/hooks/useUserNotes';
-import { useEncryptedPdfStorage } from '@/hooks/useEncryptedPdfStorage';
-import type { CachedContentMeta } from '@/hooks/useEncryptedPdfStorage';
-import { EncryptedPdfViewer } from '@/plugins/encrypted-pdf-viewer';
-import { Capacitor } from '@capacitor/core';
-import type { OutlineItem } from '@/types/pdf';
+import { useUserHighlights, HighlightColor } from '@/hooks/useUserHighlights';
+import { ExtractedToc } from '@/lib/pdfTocExtractor';
+import { HIGHLIGHT_COLORS } from '@/hooks/useUserHighlights';
 
-interface MetadataResponse {
-  cached: boolean;
-  versionHash: string;
+pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+
+// PDF.js options for proper rendering of fonts, characters, and embedded content
+const pdfOptions = {
+  cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfjs.version}/cmaps/`,
+  cMapPacked: true,
+  standardFontDataUrl: `https://unpkg.com/pdfjs-dist@${pdfjs.version}/standard_fonts/`,
+};
+
+interface ContentDetails {
   title: string;
-  totalPages: number | null;
-  tableOfContents: unknown;
-  segmentCount: number;
-  sessionId?: string;
-  timestamp?: string;
+  signedUrl: string;
+  expiresAt: number;
+  watermark: {
+    userName: string;
+    userEmail: string;
+    timestamp: string;
+    sessionId: string;
+  };
 }
 
-interface SegmentResponse {
-  segmentIndex: number;
-  encryptedPdf: string;
-  iv: string;
-  salt: string;
-}
+const MAX_RECENT_PAGES = 5;
 
 export default function SecureReaderScreen() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { user, profile, signOut } = useAuth();
-
+  const { profile, signOut } = useAuth();
+  const containerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const pdfWrapperRef = useRef<HTMLDivElement>(null);
+  
   const { isRecording, screenshotDetected, clearScreenshotAlert } = useSecurityMonitor();
-  usePrivacyScreen(true);
-
-  const [title, setTitle] = useState('');
-  const [numPages, setNumPages] = useState(0);
+  // TEMPORARILY DISABLED for client presentation - set back to true when done
+  usePrivacyScreen(false);
+  
+  const [content, setContent] = useState<ContentDetails | null>(null);
+  const [numPages, setNumPages] = useState<number>(0);
   const [loading, setLoading] = useState(true);
+  const [checkingAccess, setCheckingAccess] = useState(true);
   const [loadingProgress, setLoadingProgress] = useState(0);
-  const [loadingMessage, setLoadingMessage] = useState('Checking local cache...');
   const [error, setError] = useState<string | null>(null);
+  const [baseWidth, setBaseWidth] = useState(window.innerWidth - 32);
+  const [sessionId] = useState(() => crypto.randomUUID().substring(0, 8));
   const [showGoToDialog, setShowGoToDialog] = useState(false);
+  const [recentPages, setRecentPages] = useState<number[]>([]);
+  const [hasInitializedPage, setHasInitializedPage] = useState(false);
+  const [hasAccess, setHasAccess] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [pdfDocument, setPdfDocument] = useState<any>(null);
   const [showToc, setShowToc] = useState(false);
   const [showNotesPanel, setShowNotesPanel] = useState(false);
-  const [storedToc, setStoredToc] = useState<OutlineItem[] | null>(null);
   const [contentCategory, setContentCategory] = useState<string | null>(null);
-  const [currentPage, setCurrentPage] = useState(1);
+  const [isLegacyContent, setIsLegacyContent] = useState(false);
+  const [isJumpingToPage, setIsJumpingToPage] = useState(false);
+  const [jumpTargetPage, setJumpTargetPage] = useState<number | null>(null);
+  const [storedToc, setStoredToc] = useState<ExtractedToc | null>(null);
+  const [isRecoveringSession, setIsRecoveringSession] = useState(false);
+  const [isHighlightMode, setIsHighlightMode] = useState(false);
+  const [highlightColor, setHighlightColor] = useState<HighlightColor>('yellow');
+  
+  // Store the PDF URL in a ref so refreshes don't trigger re-renders
+  const pdfUrlRef = useRef<string | null>(null);
+  const expiresAtRef = useRef<number | null>(null);
+  
+  // Track if we've already loaded content once (for recovery purposes)
+  const hasLoadedContentRef = useRef(false);
 
-  // Track whether we have content ready to view (from cache or download)
-  const [contentReady, setContentReady] = useState(false);
+  const { 
+    containerRef: scrollContainerRef, 
+    registerPage, 
+    currentPage, 
+  } = useScrollPageDetection({
+    totalPages: numPages,
+    enabled: numPages > 0,
+  });
 
-  // For web fallback: keep encrypted segments in memory
-  const encryptedSegmentsRef = useRef<SegmentResponse[]>([]);
-  const cachedMetaRef = useRef<CachedContentMeta | null>(null);
+  // Ref to store the virtualizer's scroll API
+  const viewerApiRef = useRef<VirtualizedPdfViewerApi | null>(null);
 
+  // Segment manager for segmented PDFs
   const {
-    getStoredContentMeta,
-    saveSegment,
-    saveContentMeta,
-    getDecryptedPdf,
-    decryptFromBase64,
-    deleteContent,
-    cleanupOldVersions,
-  } = useEncryptedPdfStorage();
+    segments,
+    isLoadingSegments,
+    getSegmentForPage,
+    getSegmentUrl,
+    isLoadingSegment,
+    totalPages: segmentedTotalPages,
+    isSegmented,
+    prefetchSegmentForPage,
+    refreshAllUrls,
+  } = useSegmentManager({
+    contentId: id,
+    currentPage,
+    enabled: hasAccess && !isLegacyContent && !loading,
+  });
 
-  const isLoggedIn = !!user && !!profile;
-  const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
+  // Session recovery - automatically refresh session when app regains focus
+  const handleSessionRecovered = useCallback(() => {
+    console.log('[SecureReader] Session recovered, refreshing URLs...');
+    setIsRecoveringSession(false);
+    
+    // Refresh segment URLs if we're using segmented content
+    if (isSegmented && refreshAllUrls) {
+      refreshAllUrls();
+    }
+  }, [isSegmented, refreshAllUrls]);
 
+  const handleRecoveryFailed = useCallback((error: Error) => {
+    console.error('[SecureReader] Session recovery failed:', error);
+    setIsRecoveringSession(false);
+    // Don't navigate away - let user continue with cached content if possible
+  }, []);
+
+  const { isRecovering: isSessionRecovering, refreshSession } = useSessionRecovery({
+    enabled: hasAccess && !!content,
+    onSessionRecovered: handleSessionRecovered,
+    onRecoveryFailed: handleRecoveryFailed,
+  });
+
+  // Update recovering state for UI
+  useEffect(() => {
+    setIsRecoveringSession(isSessionRecovering);
+  }, [isSessionRecovering]);
+
+  // User notes hook
   const {
     notes,
+    pagesWithNotes,
     isLoading: isNotesLoading,
     isSaving: isNotesSaving,
     addNote,
     updateNote,
     deleteNote,
-  } = useUserNotes({ contentId: id, enabled: isLoggedIn && contentReady });
+    getNotesForPage,
+  } = useUserNotes({ contentId: id, enabled: hasAccess });
+
+  // User highlights hook
+  const {
+    highlights,
+    highlightsByPage,
+    pagesWithHighlights,
+    isLoading: isHighlightsLoading,
+    isSaving: isHighlightsSaving,
+    addHighlight,
+    deleteHighlight,
+    getHighlightsForPage,
+  } = useUserHighlights({ contentId: id, enabled: hasAccess });
 
   const {
     savedProgress,
@@ -96,308 +185,430 @@ export default function SecureReaderScreen() {
     dismissResumePrompt,
     saveProgress,
     saveProgressImmediate,
-  } = useReadingProgress({ contentId: id, totalPages: numPages });
-
-  useSessionRecovery({
-    enabled: isLoggedIn && contentReady && !loading,
-    onSessionRecovered: () => console.log('[SecureReader] Session recovered'),
-    onRecoveryFailed: (err) => console.error('[SecureReader] Recovery failed:', err),
+  } = useReadingProgress({
+    contentId: id,
+    totalPages: numPages,
   });
 
-  const effectiveOutline: OutlineItem[] = storedToc || [];
-  const effectiveHasOutline = (storedToc?.length || 0) > 0;
+  // Handle zoom changes - scroll to current page after re-render
+  const handleZoomChange = useCallback((newZoom: number, pageToRestore: number) => {
+    // Use virtualizer to scroll to the page we were on before zoom
+    viewerApiRef.current?.scrollToPage(pageToRestore, false);
+  }, []);
 
-  // ── Main offline-first flow ──
+  // Width-based zoom - pages re-render at different widths for crisp text
+  const { 
+    zoomLevel, 
+    zoomIn, 
+    zoomOut, 
+    resetZoom,
+    isZoomed,
+  } = usePinchZoom({
+    minScale: 1,
+    maxScale: 2,
+    currentPage,
+    onZoomChange: handleZoomChange,
+  });
+
+  // Calculate page width based on zoom level (native approach - no CSS transforms)
+  const pageWidth = Math.round(baseWidth * zoomLevel);
+
   useEffect(() => {
-    if (!id) return;
+    if (!isProgressLoading && savedProgress && !hasInitializedPage && numPages > 0) {
+      setHasInitializedPage(true);
+    }
+  }, [isProgressLoading, savedProgress, hasInitializedPage, numPages]);
 
-    const run = async () => {
+  useEffect(() => {
+    if (currentPage > 0 && hasInitializedPage) {
+      setRecentPages((prev) => {
+        const filtered = prev.filter((p) => p !== currentPage);
+        return [currentPage, ...filtered].slice(0, MAX_RECENT_PAGES);
+      });
+    }
+  }, [currentPage, hasInitializedPage]);
+
+  useEffect(() => {
+    if (currentPage > 0 && numPages > 0 && hasInitializedPage) {
+      saveProgress(currentPage);
+    }
+  }, [currentPage, numPages, saveProgress, hasInitializedPage]);
+
+  useEffect(() => {
+    return () => {
+      if (currentPage > 0 && numPages > 0) {
+        saveProgressImmediate(currentPage);
+      }
+    };
+  }, [currentPage, numPages, saveProgressImmediate]);
+
+  useEffect(() => {
+    const preventActions = (e: Event) => {
+      e.preventDefault();
+      return false;
+    };
+
+    const preventKeyboard = (e: KeyboardEvent) => {
+      if (
+        (e.ctrlKey && ['c', 'v', 'p', 's', 'a'].includes(e.key.toLowerCase())) ||
+        e.key === 'PrintScreen'
+      ) {
+        e.preventDefault();
+        return false;
+      }
+    };
+
+    document.addEventListener('contextmenu', preventActions);
+    document.addEventListener('copy', preventActions);
+    document.addEventListener('cut', preventActions);
+    document.addEventListener('paste', preventActions);
+    document.addEventListener('keydown', preventKeyboard);
+    document.addEventListener('dragstart', preventActions);
+    document.addEventListener('selectstart', preventActions);
+
+    return () => {
+      document.removeEventListener('contextmenu', preventActions);
+      document.removeEventListener('copy', preventActions);
+      document.removeEventListener('cut', preventActions);
+      document.removeEventListener('paste', preventActions);
+      document.removeEventListener('keydown', preventKeyboard);
+      document.removeEventListener('dragstart', preventActions);
+      document.removeEventListener('selectstart', preventActions);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (containerRef.current) {
+        setBaseWidth(containerRef.current.clientWidth - 32);
+      } else {
+        setBaseWidth(window.innerWidth - 32);
+      }
+    };
+    
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  useEffect(() => {
+    const checkContentAccess = async () => {
+      if (!id || !profile) {
+        setCheckingAccess(false);
+        return;
+      }
+
       try {
-        // Step 1: Check local cache
-        setLoadingMessage('Checking local cache...');
-        setLoadingProgress(5);
+        if (profile.role === 'admin') {
+          setHasAccess(true);
+          setCheckingAccess(false);
+          return;
+        }
 
-        const cachedMeta = await getStoredContentMeta(id);
+        const { data: access, error: accessError } = await supabase
+          .from('user_content_access')
+          .select('id')
+          .eq('user_id', profile.id)
+          .eq('content_id', id)
+          .maybeSingle();
 
-        if (cachedMeta) {
-          // We have a cached version
-          cachedMetaRef.current = cachedMeta;
-          setTitle(cachedMeta.title);
-          setNumPages(cachedMeta.totalPages);
-          if (cachedMeta.tableOfContents) setStoredToc(cachedMeta.tableOfContents);
+        if (accessError) {
+          console.error('Error checking access:', accessError);
+          setError('Failed to verify content access');
+          setCheckingAccess(false);
+          return;
+        }
 
-          // Step 2a: If online AND logged in, verify access
-          if (isOnline && isLoggedIn) {
-            setLoadingMessage('Verifying access...');
-            setLoadingProgress(15);
-
-            const isAdmin = profile.role === 'admin';
-            if (!isAdmin) {
-              const { data: accessData } = await supabase
-                .from('user_content_access')
-                .select('id')
-                .eq('user_id', profile.id)
-                .eq('content_id', id)
-                .maybeSingle();
-
-              if (!accessData) {
-                // Access revoked — delete cache
-                await deleteContent(id);
-                setError('Your access to this content has been revoked.');
-                setLoading(false);
-                return;
-              }
-            }
-          }
-
-          // Step 3: Content is cached and access is valid (or we're offline/logged-out)
-          setLoadingProgress(100);
-          setContentReady(true);
+        if (!access) {
+          setError('You have not purchased this content. Please purchase it from the library to access.');
+          setHasAccess(false);
+          setCheckingAccess(false);
           setLoading(false);
           return;
         }
 
-        // Step 4: NOT cached — require login
-        if (!isLoggedIn) {
-          navigate('/login', { state: { from: { pathname: `/reader/${id}` } }, replace: true });
-          return;
-        }
+        setHasAccess(true);
+        setCheckingAccess(false);
+      } catch (err) {
+        console.error('Access check error:', err);
+        setError('Failed to verify content access');
+        setCheckingAccess(false);
+      }
+    };
 
-        // Step 4a: Download from server
-        setLoadingMessage('Connecting to server...');
+    checkContentAccess();
+  }, [id, profile]);
+
+  // Check if content is segmented or legacy, then fetch appropriately
+  useEffect(() => {
+    if (checkingAccess || !hasAccess) return;
+
+    const fetchSecureContent = async () => {
+      if (!id) {
+        setError('No content ID provided');
+        setLoading(false);
+        return;
+      }
+
+      try {
         setLoadingProgress(10);
-
         const deviceId = await getDeviceId();
         const { data: { session } } = await supabase.auth.getSession();
+        
         if (!session) {
           setError('Please log in to view content');
           setLoading(false);
           return;
         }
 
-        // Get metadata
-        const metaResponse = await supabase.functions.invoke('deliver-encrypted-pdf', {
-          body: { content_id: id, device_id: deviceId },
-        });
+        setLoadingProgress(30);
 
-        if (metaResponse.error) throw new Error(metaResponse.error.message);
-        const meta = metaResponse.data as MetadataResponse;
+        // First, check if this content has segments
+        const { data: segmentCheck, error: segmentError } = await supabase
+          .from('content_segments')
+          .select('id')
+          .eq('content_id', id)
+          .limit(1);
 
-        setTitle(meta.title);
-        setNumPages(meta.totalPages || 0);
-        if (meta.tableOfContents) setStoredToc(meta.tableOfContents as OutlineItem[]);
-
-        // Fetch category
-        supabase.from('content').select('category').eq('id', id).single()
-          .then(({ data }) => { if (data?.category) setContentCategory(data.category); });
-
-        if (meta.cached) {
-          // Server says our local cache is current — but we don't have it locally?
-          // This means the cache record exists server-side but files were cleared.
-          // Re-download by NOT returning.
+        if (segmentError) {
+          console.error('Error checking segments:', segmentError);
         }
 
-        // Download each segment
-        const segmentCount = meta.segmentCount || 1;
-        const segments: SegmentResponse[] = [];
-        const segmentMetas: CachedContentMeta['segments'] = [];
+        const hasSegments = segmentCheck && segmentCheck.length > 0;
+        
+        if (hasSegments) {
+          // Segmented content - don't call render-pdf-page, use segment manager instead
+          setIsLegacyContent(false);
+          setLoadingProgress(50);
 
-        for (let i = 0; i < segmentCount; i++) {
-          setLoadingMessage(`Downloading segment ${i + 1} of ${segmentCount}...`);
+          // Fetch content metadata (title, watermark info, TOC) directly
+          const { data: contentData, error: contentError } = await supabase
+            .from('content')
+            .select('title, total_pages, table_of_contents')
+            .eq('id', id)
+            .single();
 
-          const segResponse = await supabase.functions.invoke('deliver-encrypted-pdf', {
-            body: {
-              content_id: id,
-              device_id: deviceId,
-              segment_index: i,
-              session_id: meta.sessionId,
-              timestamp: meta.timestamp,
+          if (contentError) {
+            throw new Error('Failed to load content metadata');
+          }
+
+          // Use stored TOC if available
+          if (contentData.table_of_contents) {
+            console.log('[SecureReader] Using stored TOC from database');
+            setStoredToc(contentData.table_of_contents as unknown as ExtractedToc);
+          }
+
+          // Fetch profile for watermark
+          const { data: profileData } = await supabase
+            .from('profiles')
+            .select('name, email')
+            .eq('id', session.user.id)
+            .single();
+
+          setLoadingProgress(90);
+
+          setContent({
+            title: contentData.title,
+            signedUrl: '', // Will be loaded per-segment
+            expiresAt: 0,
+            watermark: {
+              userName: profileData?.name || profileData?.email?.split('@')[0] || 'User',
+              userEmail: profileData?.email || '',
+              timestamp: new Date().toISOString(),
+              sessionId: crypto.randomUUID().substring(0, 8),
             },
           });
 
-          if (segResponse.error) throw new Error(segResponse.error.message);
-          const seg = segResponse.data as SegmentResponse;
-          segments.push(seg);
-
-          // Save to device storage (native only)
-          if (Capacitor.isNativePlatform()) {
-            const fileName = await saveSegment(id, meta.versionHash, seg.segmentIndex, seg.encryptedPdf);
-            segmentMetas.push({
-              segmentIndex: seg.segmentIndex,
-              iv: seg.iv,
-              salt: seg.salt,
-              fileName,
-            });
+          // Set numPages from content metadata for segmented content
+          if (contentData.total_pages) {
+            setNumPages(contentData.total_pages);
           }
 
-          const segProgress = 10 + Math.round(((i + 1) / segmentCount) * 80);
-          setLoadingProgress(segProgress);
+          setLoadingProgress(100);
+        } else {
+          // Legacy content - use render-pdf-page for single file
+          setIsLegacyContent(true);
+          setLoadingProgress(50);
+
+          const response = await supabase.functions.invoke('render-pdf-page', {
+            body: {
+              content_id: id,
+              page_number: 1,
+              device_id: deviceId,
+            },
+          });
+
+          setLoadingProgress(70);
+
+          if (response.error) {
+            throw new Error(response.error.message);
+          }
+
+          const data = response.data;
+
+          if (data.error) {
+            if (data.code === 'DEVICE_MISMATCH') {
+              await signOut();
+              navigate('/login', { replace: true });
+              return;
+            }
+            throw new Error(data.error);
+          }
+
+          setLoadingProgress(90);
+
+          // Store URL in refs to avoid re-renders on refresh
+          pdfUrlRef.current = data.signedUrl;
+          expiresAtRef.current = data.expiresAt || Date.now() + (5 * 60 * 1000);
+
+          setContent({
+            title: data.title,
+            signedUrl: data.signedUrl,
+            expiresAt: data.expiresAt || Date.now() + (5 * 60 * 1000),
+            watermark: data.watermark,
+          });
+
+          setLoadingProgress(100);
         }
-
-        encryptedSegmentsRef.current = segments;
-
-        // Save full metadata (native only)
-        if (Capacitor.isNativePlatform()) {
-          const fullMeta: CachedContentMeta = {
-            versionHash: meta.versionHash,
-            contentId: id,
-            userId: profile.id,
-            title: meta.title,
-            totalPages: meta.totalPages || 0,
-            tableOfContents: (meta.tableOfContents as OutlineItem[]) || null,
-            segments: segmentMetas,
-          };
-          await saveContentMeta(fullMeta);
-          cachedMetaRef.current = fullMeta;
-
-          // Clean up old version files
-          await cleanupOldVersions(id, meta.versionHash);
-        }
-
-        setLoadingProgress(100);
-        setContentReady(true);
       } catch (err) {
-        console.error('Reader error:', err);
-        if (err instanceof Error && err.message.includes('DEVICE_MISMATCH')) {
-          await signOut();
-          navigate('/login', { replace: true });
-          return;
-        }
+        console.error('Error fetching content:', err);
         setError(err instanceof Error ? err.message : 'Failed to load content');
       } finally {
         setLoading(false);
       }
     };
 
-    run();
-  }, [id, isLoggedIn, isOnline]);
+    fetchSecureContent();
+  }, [id, signOut, navigate, checkingAccess, hasAccess]);
 
-  // ── Fetch category when logged in ──
+  // Fetch content category
   useEffect(() => {
-    if (!id || !isLoggedIn) return;
-    supabase.from('content').select('category').eq('id', id).single()
-      .then(({ data }) => { if (data?.category) setContentCategory(data.category); });
-  }, [id, isLoggedIn]);
-
-  // ── Open native viewer ──
-  const openViewer = useCallback(async (initialPage = 1) => {
-    if (!id) return;
-
-    try {
-      let pdfBytes: Uint8Array | null = null;
-
-      // Try loading from device cache first (native)
-      if (Capacitor.isNativePlatform()) {
-        pdfBytes = await getDecryptedPdf(id);
-      }
-
-      // Fallback: decrypt from in-memory segments (web or if cache read failed)
-      if (!pdfBytes && encryptedSegmentsRef.current.length > 0) {
-        const userId = cachedMetaRef.current?.userId || profile?.id;
-        if (!userId) {
-          setError('Cannot decrypt content — user identity unavailable.');
-          return;
-        }
-
-        const decryptedParts: Uint8Array[] = [];
-        for (const seg of encryptedSegmentsRef.current) {
-          const part = await decryptFromBase64(
-            id,
-            userId,
-            seg.encryptedPdf,
-            seg.iv,
-            seg.salt,
-          );
-          decryptedParts.push(part);
-        }
-
-        if (decryptedParts.length === 1) {
-          pdfBytes = decryptedParts[0];
-        } else {
-          const totalLen = decryptedParts.reduce((sum, p) => sum + p.length, 0);
-          const merged = new Uint8Array(totalLen);
-          let offset = 0;
-          for (const part of decryptedParts) {
-            merged.set(part, offset);
-            offset += part.length;
-          }
-          pdfBytes = merged;
-        }
-      }
-
-      if (!pdfBytes) {
-        setError('No content available. Please re-download.');
-        return;
-      }
-
-      // Convert to base64 for the viewer
-      let binary = '';
-      for (let i = 0; i < pdfBytes.length; i++) binary += String.fromCharCode(pdfBytes[i]);
-      const pdfBase64 = btoa(binary);
-
-      const result = await EncryptedPdfViewer.openPdf({
-        pdfBase64,
-        title,
-        initialPage,
-      });
-
-      if (result.lastPage > 0) {
-        setCurrentPage(result.lastPage);
-        if (isLoggedIn) saveProgressImmediate(result.lastPage);
-      }
-    } catch (err) {
-      console.error('Viewer error:', err);
-      setError('Failed to open PDF viewer');
-    }
-  }, [id, title, profile, getDecryptedPdf, decryptFromBase64, saveProgressImmediate, isLoggedIn]);
-
-  // Auto-open viewer after content is ready
-  useEffect(() => {
-    if (contentReady && !error && numPages > 0) {
-      const initialPage = savedProgress?.currentPage || 1;
-      openViewer(initialPage);
-    }
-  }, [contentReady, error, numPages, openViewer, savedProgress]);
-
-  // Save progress on page change (only when logged in)
-  useEffect(() => {
-    if (currentPage > 0 && numPages > 0 && isLoggedIn) saveProgress(currentPage);
-  }, [currentPage, numPages, saveProgress, isLoggedIn]);
-
-  // Keyboard / context menu prevention
-  useEffect(() => {
-    const prevent = (e: Event) => { e.preventDefault(); return false; };
-    const preventKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey && ['c', 'v', 'p', 's', 'a'].includes(e.key.toLowerCase())) || e.key === 'PrintScreen') {
-        e.preventDefault();
+    const fetchCategory = async () => {
+      if (!id) return;
+      const { data } = await supabase
+        .from('content')
+        .select('category')
+        .eq('id', id)
+        .single();
+      if (data?.category) {
+        setContentCategory(data.category);
       }
     };
-    document.addEventListener('contextmenu', prevent);
-    document.addEventListener('copy', prevent);
-    document.addEventListener('keydown', preventKey);
-    return () => {
-      document.removeEventListener('contextmenu', prevent);
-      document.removeEventListener('copy', prevent);
-      document.removeEventListener('keydown', preventKey);
-    };
+    fetchCategory();
+  }, [id]);
+
+  const { outline: clientOutline, hasOutline: clientHasOutline, loading: outlineLoading } = usePdfOutline(pdfDocument);
+
+  // Use stored TOC if available, otherwise fall back to client-extracted outline
+  const effectiveOutline: OutlineItem[] = storedToc?.items || clientOutline;
+  const effectiveHasOutline = storedToc ? storedToc.items.length > 0 : clientHasOutline;
+  const effectiveOutlineLoading = storedToc ? false : outlineLoading;
+
+  // Auto-refresh signed URL before expiry - update refs only (no re-render)
+  const handleUrlRefreshed = useCallback((newUrl: string, newExpiresAt: number) => {
+    console.log('[SecureReader] URL refreshed silently, no reload needed');
+    pdfUrlRef.current = newUrl;
+    expiresAtRef.current = newExpiresAt;
+    // Don't call setContent - the PDF.js document already has the file loaded
+    // The new URL is stored in refs for any future page requests
   }, []);
 
-  const goToPage = useCallback((page: number) => {
-    if (page < 1 || page > numPages) return;
-    openViewer(page);
-  }, [numPages, openViewer]);
+  const handleUrlRefreshError = useCallback((error: Error) => {
+    console.error('Failed to refresh signed URL:', error);
+    // Don't set error state - let the user continue reading with existing URL
+  }, []);
 
-  const handleResume = useCallback(() => {
-    if (savedProgress) openViewer(savedProgress.currentPage);
+  useSignedUrlRefresh({
+    contentId: id,
+    initialUrl: pdfUrlRef.current,
+    initialExpiresAt: expiresAtRef.current,
+    enabled: !!content && numPages > 0,
+    onUrlRefreshed: handleUrlRefreshed,
+    onRefreshError: handleUrlRefreshError,
+  });
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const onDocumentLoadSuccess = useCallback(({ numPages: pages }: { numPages: number }, doc?: any) => {
+    setNumPages(pages);
+    setHasInitializedPage(true);
+    if (doc) {
+      setPdfDocument(doc);
+    }
+  }, []);
+
+  // Callback to receive the virtualizer's scroll API
+  const handleViewerReady = useCallback((api: VirtualizedPdfViewerApi) => {
+    viewerApiRef.current = api;
+  }, []);
+
+  const goToPage = useCallback(async (page: number) => {
+    if (page < 1 || page > numPages) return;
+    
+    setIsJumpingToPage(true);
+    setJumpTargetPage(page);
+    
+    try {
+      // For segmented content, prefetch the target segment first
+      if (isSegmented && prefetchSegmentForPage) {
+        await prefetchSegmentForPage(page);
+      }
+      
+      // Use virtualizer's scroll method
+      viewerApiRef.current?.scrollToPage(page, true);
+      
+      // Small delay to let the scroll complete
+      setTimeout(() => {
+        setIsJumpingToPage(false);
+        setJumpTargetPage(null);
+      }, 500);
+    } catch (err) {
+      console.error('Error jumping to page:', err);
+      setIsJumpingToPage(false);
+      setJumpTargetPage(null);
+    }
+  }, [numPages, isSegmented, prefetchSegmentForPage]);
+
+  const handleResume = useCallback(async () => {
+    if (savedProgress) {
+      setIsJumpingToPage(true);
+      setJumpTargetPage(savedProgress.currentPage);
+      
+      try {
+        // For segmented content, prefetch the target segment first
+        if (isSegmented && prefetchSegmentForPage) {
+          await prefetchSegmentForPage(savedProgress.currentPage);
+        }
+        
+        // Small delay to ensure viewer is ready
+        setTimeout(() => {
+          viewerApiRef.current?.scrollToPage(savedProgress.currentPage, true);
+          
+          setTimeout(() => {
+            setIsJumpingToPage(false);
+            setJumpTargetPage(null);
+          }, 500);
+        }, 100);
+      } catch (err) {
+        console.error('Error resuming:', err);
+        setIsJumpingToPage(false);
+        setJumpTargetPage(null);
+      }
+    }
     dismissResumePrompt();
-  }, [savedProgress, openViewer, dismissResumePrompt]);
+  }, [savedProgress, dismissResumePrompt, isSegmented, prefetchSegmentForPage]);
+
+  const handleStartOver = useCallback(() => {
+    viewerApiRef.current?.scrollToPage(1, true);
+    dismissResumePrompt();
+  }, [dismissResumePrompt]);
 
   const handleClose = useCallback(() => {
-    if (currentPage > 0 && numPages > 0 && isLoggedIn) saveProgressImmediate(currentPage);
+    if (currentPage > 0 && numPages > 0) {
+      saveProgressImmediate(currentPage);
+    }
     navigate('/library', { replace: true });
-  }, [currentPage, numPages, saveProgressImmediate, navigate, isLoggedIn]);
+  }, [currentPage, numPages, saveProgressImmediate, navigate]);
 
-  // ── Loading state ──
   if (loading) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-background px-6 safe-top safe-bottom">
@@ -408,14 +619,15 @@ export default function SecureReaderScreen() {
           <div className="absolute -bottom-1 -right-1 h-6 w-6 rounded-lg bg-gradient-to-br from-[hsl(43_74%_49%)] to-[hsl(38_72%_55%)]" />
         </div>
         <p className="font-display text-lg font-semibold text-foreground mb-2">Loading Publication</p>
-        <p className="text-sm text-muted-foreground mb-6">{loadingMessage}</p>
-        <div className="w-48"><Progress value={loadingProgress} className="h-1.5" /></div>
+        <p className="text-sm text-muted-foreground mb-6">Preparing secure content...</p>
+        <div className="w-48">
+          <Progress value={loadingProgress} className="h-1.5" />
+        </div>
         <p className="text-xs text-muted-foreground mt-3">{loadingProgress}%</p>
       </div>
     );
   }
 
-  // ── Error state ──
   if (error) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-background px-6 safe-top safe-bottom">
@@ -433,24 +645,53 @@ export default function SecureReaderScreen() {
     );
   }
 
-  // ── Main reader UI ──
+  const pdfSource = content?.signedUrl || null;
+
   return (
-    <div
-      className="flex h-screen flex-col bg-background safe-top safe-bottom"
-      style={{ WebkitTouchCallout: 'none', WebkitUserSelect: 'none', userSelect: 'none', height: '100dvh' }}
+    <div 
+      ref={containerRef}
+      className="flex h-screen flex-col bg-reader-bg secure-content safe-top safe-bottom overflow-hidden"
+      style={{
+        WebkitTouchCallout: 'none',
+        WebkitUserSelect: 'none',
+        userSelect: 'none',
+        height: '100dvh',
+      }}
     >
+      <ScrollProgressBar currentPage={currentPage} totalPages={numPages} />
+
       <SecurityWarning
         isRecording={isRecording}
         screenshotDetected={screenshotDetected}
         onDismiss={clearScreenshotAlert}
       />
 
+      {/* Session Recovery Indicator */}
+      {isRecoveringSession && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 rounded-full bg-card/95 backdrop-blur-sm px-4 py-2 shadow-lg border border-border">
+          <RefreshCw className="h-4 w-4 animate-spin text-primary" />
+          <span className="text-xs font-medium text-foreground">Reconnecting...</span>
+        </div>
+      )}
+
+      {/* Page Jump Loading Overlay */}
+      {isJumpingToPage && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-3 rounded-2xl bg-card p-6 shadow-lg border border-border">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <p className="text-sm font-medium text-foreground">
+              Jumping to page {jumpTargetPage}...
+            </p>
+          </div>
+        </div>
+      )}
+
       <ResumeReadingToast
         show={showResumePrompt && numPages > 0}
         savedPage={savedProgress?.currentPage ?? 1}
         totalPages={numPages}
         onResume={handleResume}
-        onStartOver={() => { openViewer(1); dismissResumePrompt(); }}
+        onStartOver={handleStartOver}
         onDismiss={dismissResumePrompt}
       />
 
@@ -460,7 +701,7 @@ export default function SecureReaderScreen() {
         currentPage={currentPage}
         totalPages={numPages}
         onPageChange={goToPage}
-        recentPages={[]}
+        recentPages={recentPages}
       />
 
       <TableOfContents
@@ -470,10 +711,11 @@ export default function SecureReaderScreen() {
         currentPage={currentPage}
         onNavigate={goToPage}
         hasOutline={effectiveHasOutline}
-        isLoading={false}
+        isLoading={effectiveOutlineLoading}
         category={contentCategory || undefined}
       />
 
+      {/* Notes Panel */}
       <NotesPanel
         isOpen={showNotesPanel}
         onClose={() => setShowNotesPanel(false)}
@@ -487,9 +729,10 @@ export default function SecureReaderScreen() {
         isSaving={isNotesSaving}
       />
 
-      {/* Header */}
+      {/* Premium Reader Header */}
       <header className="sticky top-0 z-30 glass border-b border-border/50 px-2 sm:px-4 py-2 sm:py-3">
         <div className="flex items-center justify-between gap-1 sm:gap-2">
+          {/* Left controls - shrink-0 to prevent shrinking */}
           <div className="flex items-center gap-1 shrink-0">
             <button
               onClick={() => setShowToc(true)}
@@ -510,6 +753,31 @@ export default function SecureReaderScreen() {
                 </span>
               )}
             </button>
+            <HighlightColorPicker
+              selectedColor={highlightColor}
+              onColorChange={setHighlightColor}
+            >
+              <button
+                onClick={() => setIsHighlightMode(!isHighlightMode)}
+                className={`
+                  flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl transition-colors
+                  ${isHighlightMode 
+                    ? 'bg-primary text-primary-foreground' 
+                    : 'hover:bg-secondary'
+                  }
+                `}
+                title={isHighlightMode ? 'Exit Highlight Mode (click to pick color)' : 'Highlight Mode'}
+              >
+                <Highlighter 
+                  className="h-4 w-4 sm:h-5 sm:w-5" 
+                  style={{ 
+                    color: isHighlightMode 
+                      ? undefined 
+                      : HIGHLIGHT_COLORS[highlightColor].border 
+                  }}
+                />
+              </button>
+            </HighlightColorPicker>
             <button
               onClick={handleClose}
               className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl hover:bg-secondary transition-colors"
@@ -517,43 +785,178 @@ export default function SecureReaderScreen() {
               <X className="h-4 w-4 sm:h-5 sm:w-5 text-foreground" />
             </button>
           </div>
-
+          
+          {/* Title section - allow shrinking with min-w-0 */}
           <div className="text-center flex-1 min-w-0 mx-1 sm:mx-4">
             <h1 className="line-clamp-1 font-display text-sm sm:text-base font-semibold text-foreground truncate">
-              {title}
+              {content?.title}
             </h1>
             <button
               onClick={() => setShowGoToDialog(true)}
-              className="text-[10px] sm:text-xs text-muted-foreground hover:text-primary transition-colors"
+              className="text-[10px] sm:text-xs text-muted-foreground hover:text-primary transition-colors truncate max-w-full"
             >
               Page {currentPage} of {numPages || '...'} • Tap to jump
             </button>
           </div>
-
-          <div className="shrink-0">
+          
+          {/* Zoom Controls - shrink-0 to prevent overflow */}
+          <div className="flex items-center gap-0.5 sm:gap-1 bg-muted/50 rounded-lg sm:rounded-xl p-0.5 sm:p-1 shrink-0">
             <button
-              onClick={() => openViewer(currentPage)}
-              className="px-3 py-2 bg-primary text-primary-foreground rounded-xl text-xs font-medium"
+              onClick={zoomOut}
+              disabled={zoomLevel <= 1}
+              className="flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-md sm:rounded-lg hover:bg-card disabled:opacity-30 transition-all"
+              title="Zoom out"
             >
-              Open Viewer
+              <ZoomOut className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-foreground" />
+            </button>
+            <button
+              onClick={resetZoom}
+              className="px-1 sm:px-2 py-0.5 sm:py-1 text-[10px] sm:text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors min-w-[2.25rem] sm:min-w-[3rem] rounded-md sm:rounded-lg hover:bg-card"
+              title="Reset zoom"
+            >
+              {Math.round(zoomLevel * 100)}%
+            </button>
+            <button
+              onClick={zoomIn}
+              disabled={zoomLevel >= 2}
+              className="flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-md sm:rounded-lg hover:bg-card disabled:opacity-30 transition-all"
+              title="Zoom in"
+            >
+              <ZoomIn className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-foreground" />
             </button>
           </div>
         </div>
       </header>
 
-      {/* Main content area */}
-      <main className="flex-1 flex items-center justify-center p-6">
-        <div className="text-center space-y-4">
-          <BookOpen className="h-16 w-16 text-muted-foreground mx-auto" />
-          <p className="text-muted-foreground text-sm">
-            Tap "Open Viewer" to read the document in the secure PDF viewer.
-          </p>
+      {/* Highlight Mode Indicator */}
+      {isHighlightMode && (
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 rounded-full bg-card/95 backdrop-blur-sm px-4 py-2 shadow-lg border border-border">
+          <div 
+            className="w-3 h-3 rounded-full" 
+            style={{ backgroundColor: HIGHLIGHT_COLORS[highlightColor].border }}
+          />
+          <span className="text-xs font-medium text-foreground">Highlight Mode</span>
           <button
-            onClick={() => openViewer(currentPage)}
-            className="px-6 py-3 bg-primary text-primary-foreground rounded-xl font-medium text-sm shadow-[var(--shadow-md)] hover:shadow-[var(--shadow-lg)] transition-all"
+            onClick={() => setIsHighlightMode(false)}
+            className="ml-1 text-xs text-muted-foreground hover:text-foreground"
           >
-            Open PDF Viewer
+            Exit
           </button>
+        </div>
+      )}
+
+      {/* PDF Viewer */}
+      <main 
+        ref={contentRef}
+        className="relative flex-1 overflow-hidden"
+      >
+        <Watermark sessionId={sessionId} />
+        
+        <FloatingPageIndicator 
+          currentPage={currentPage} 
+          totalPages={numPages} 
+          containerRef={scrollContainerRef}
+        />
+        
+        <div 
+          ref={scrollContainerRef}
+          className="h-full overflow-x-auto overflow-y-auto overscroll-none"
+          style={{
+            WebkitOverflowScrolling: 'touch',
+            // Disable native zoom - use button-based zoom only
+            touchAction: 'pan-x pan-y',
+          }}
+        >
+          {/* Content wrapper - width adapts to zoomed page width with proper padding */}
+          <div
+            className="py-4 flex justify-center"
+            style={{
+              // Ensure content is never clipped - add padding for zoomed content
+              width: 'fit-content',
+              minWidth: '100%',
+              paddingLeft: isZoomed ? '16px' : '0',
+              paddingRight: isZoomed ? '16px' : '0',
+            }}
+          >
+            {/* Segmented content: VirtualizedPdfViewer handles its own Documents */}
+            {!isLegacyContent && isSegmented && numPages > 0 && id && (
+              <VirtualizedPdfViewer
+                numPages={numPages}
+                pageWidth={pageWidth}
+                registerPage={registerPage}
+                scrollContainerRef={scrollContainerRef}
+                segments={segments}
+                getSegmentUrl={getSegmentUrl}
+                getSegmentForPage={getSegmentForPage}
+                isLoadingSegment={isLoadingSegment}
+                legacyMode={false}
+                onReady={handleViewerReady}
+                getHighlightsForPage={getHighlightsForPage}
+                getNotesForPage={getNotesForPage}
+                isHighlightMode={isHighlightMode}
+                highlightColor={highlightColor}
+                onAddHighlight={addHighlight}
+                onDeleteHighlight={deleteHighlight}
+                onOpenNotesPanel={() => setShowNotesPanel(true)}
+              />
+            )}
+          
+          {/* Loading segments state for segmented content */}
+          {!isLegacyContent && !isSegmented && content && isLoadingSegments && (
+            <div className="flex flex-col items-center justify-center py-20">
+              <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
+              <p className="text-sm text-muted-foreground">Loading segments...</p>
+            </div>
+          )}
+          
+          {/* Legacy content: wrap in a single Document */}
+          {isLegacyContent && pdfSource && (
+            <Document
+              file={pdfSource}
+              onLoadSuccess={(loadedDoc) => onDocumentLoadSuccess({ numPages: loadedDoc.numPages }, loadedDoc)}
+              options={pdfOptions}
+              loading={
+                <div className="flex flex-col items-center justify-center py-20">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
+                  <p className="text-sm text-muted-foreground">Loading document...</p>
+                </div>
+              }
+              error={
+                <div className="flex flex-col items-center justify-center py-20">
+                  <AlertTriangle className="h-8 w-8 text-destructive mb-3" />
+                  <p className="text-muted-foreground">Failed to load document</p>
+                  <p className="text-xs text-muted-foreground mt-1">The file may be corrupted</p>
+                </div>
+              }
+            >
+              {numPages > 0 && id && (
+                <VirtualizedPdfViewer
+                  numPages={numPages}
+                  pageWidth={pageWidth}
+                  registerPage={registerPage}
+                  scrollContainerRef={scrollContainerRef}
+                  legacyMode={true}
+                  onReady={handleViewerReady}
+                  getHighlightsForPage={getHighlightsForPage}
+                  getNotesForPage={getNotesForPage}
+                  isHighlightMode={isHighlightMode}
+                  highlightColor={highlightColor}
+                  onAddHighlight={addHighlight}
+                  onDeleteHighlight={deleteHighlight}
+                  onOpenNotesPanel={() => setShowNotesPanel(true)}
+                />
+              )}
+            </Document>
+          )}
+          
+          {/* Loading state when content hasn't determined mode yet */}
+          {!content && (
+            <div className="flex flex-col items-center justify-center py-20">
+              <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
+              <p className="text-sm text-muted-foreground">Preparing content...</p>
+            </div>
+          )}
+        </div>
         </div>
       </main>
     </div>

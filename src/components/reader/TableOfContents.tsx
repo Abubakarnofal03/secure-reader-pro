@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, ChevronRight, FileText, BookOpen, Loader2 } from 'lucide-react';
-import { OutlineItem } from '@/types/pdf';
+import { OutlineItem } from '@/hooks/usePdfOutline';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { getCategoryConfig } from '@/lib/categories';
 
