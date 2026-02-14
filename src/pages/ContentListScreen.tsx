@@ -10,6 +10,7 @@ import { ThemeToggle } from '@/components/ThemeToggle';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { ContactSupport } from '@/components/ContactSupport';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useOfflineDownload } from '@/hooks/useOfflineDownload';
 import logo from '@/assets/logo.png';
 
 // Lazy load HighlightsSection to prevent unnecessary network requests on app start
@@ -50,6 +51,16 @@ export default function ContentListScreen() {
   const mainRef = useRef<HTMLDivElement>(null);
   const startY = useRef(0);
   const isPulling = useRef(false);
+
+  // Offline download hook
+  const {
+    downloadContent,
+    removeDownload,
+    isDownloaded,
+    isDownloading,
+    downloadingContentId,
+    downloadProgress,
+  } = useOfflineDownload();
 
   const PULL_THRESHOLD = 80;
 
@@ -371,6 +382,12 @@ export default function ContentListScreen() {
                     onClick={() => handleContentClick(item)}
                     index={index}
                     showInMyBooks={activeTab === 'my-books'}
+                    isDownloaded={isDownloaded(item.id)}
+                    isDownloading={isDownloading}
+                    downloadingContentId={downloadingContentId}
+                    downloadProgress={downloadProgress}
+                    onDownload={() => downloadContent(item.id, item.title, profile?.name || undefined, profile?.email)}
+                    onRemoveDownload={() => removeDownload(item.id)}
                   />
                 );
               })}

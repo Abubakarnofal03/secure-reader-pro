@@ -2,6 +2,7 @@ import { ChevronRight, CheckCircle, Clock, BookOpen, FileText } from 'lucide-rea
 import { motion } from 'framer-motion';
 import { getCategoryConfig } from '@/lib/categories';
 import { formatPrice } from '@/lib/currency';
+import { DownloadButton } from '@/components/library/DownloadButton';
 
 interface LibraryBookItemProps {
   id: string;
@@ -16,9 +17,17 @@ interface LibraryBookItemProps {
   onClick: () => void;
   index: number;
   showInMyBooks?: boolean;
+  // Offline download props
+  isDownloaded?: boolean;
+  isDownloading?: boolean;
+  downloadingContentId?: string | null;
+  downloadProgress?: number;
+  onDownload?: () => void;
+  onRemoveDownload?: () => void;
 }
 
 export function LibraryBookItem({
+  id,
   title,
   coverUrl,
   category,
@@ -28,6 +37,12 @@ export function LibraryBookItem({
   onClick,
   index,
   showInMyBooks = false,
+  isDownloaded = false,
+  isDownloading = false,
+  downloadingContentId = null,
+  downloadProgress = 0,
+  onDownload,
+  onRemoveDownload,
 }: LibraryBookItemProps) {
   const isPurchased = status === 'purchased';
   const isPending = status === 'pending';
@@ -173,6 +188,19 @@ export function LibraryBookItem({
           )}
         </div>
       </div>
+
+      {/* Download Button (native only, purchased only) */}
+      {isPurchased && onDownload && onRemoveDownload && (
+        <DownloadButton
+          contentId={id}
+          isDownloaded={isDownloaded}
+          isDownloading={isDownloading}
+          downloadingContentId={downloadingContentId}
+          downloadProgress={downloadProgress}
+          onDownload={onDownload}
+          onRemove={onRemoveDownload}
+        />
+      )}
 
       {/* Chevron */}
       <ChevronRight className={`h-5 w-5 flex-shrink-0 transition-colors ${
