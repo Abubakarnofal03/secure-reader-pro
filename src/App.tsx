@@ -57,31 +57,46 @@ function AuthenticatedApp() {
         <Route path="/reset-password" element={<ResetPasswordScreen />} />
         <Route path="/auth-callback" element={<AuthCallbackPage />} />
         <Route path="/confirm-email-pending" element={<EmailConfirmationPendingScreen />} />
-        <Route path="/access-pending" element={
-          <ProtectedRoute requireAccess={false}>
-            <AccessPendingScreen />
-          </ProtectedRoute>
-        } />
-        <Route path="/library" element={
-          <ProtectedRoute>
-            <ContentListScreen />
-          </ProtectedRoute>
-        } />
-        <Route path="/reader/:id" element={
-          <ProtectedRoute>
-            <SecureReaderScreen />
-          </ProtectedRoute>
-        } />
-        <Route path="/profile" element={
-          <ProtectedRoute requireAccess={false}>
-            <ProfileScreen />
-          </ProtectedRoute>
-        } />
-        <Route path="/admin" element={
-          <ProtectedRoute requireAdmin>
-            <AdminScreen />
-          </ProtectedRoute>
-        } />
+        <Route
+          path="/access-pending"
+          element={
+            <ProtectedRoute requireAccess={false}>
+              <AccessPendingScreen />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/library"
+          element={
+            <ProtectedRoute>
+              <ContentListScreen />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/reader/:id"
+          element={
+            <ProtectedRoute>
+              <SecureReaderScreen />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/profile"
+          element={
+            <ProtectedRoute requireAccess={false}>
+              <ProfileScreen />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin"
+          element={
+            <ProtectedRoute requireAdmin>
+              <AdminScreen />
+            </ProtectedRoute>
+          }
+        />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </>
@@ -94,7 +109,7 @@ function AppContent() {
   const handleDeclineTerms = () => {
     // Close the app or show blocked state
     // On web, we can't really close the tab, so we show a blocked message
-    window.location.href = 'about:blank';
+    window.location.href = "about:blank";
   };
 
   if (isLoading) {
@@ -104,11 +119,7 @@ function AppContent() {
   return (
     <>
       {/* Terms dialog - blocks app usage until accepted */}
-      <TermsAndConditionsDialog
-        isOpen={!hasAcceptedTerms}
-        onAccept={acceptTerms}
-        onDecline={handleDeclineTerms}
-      />
+      <TermsAndConditionsDialog isOpen={!hasAcceptedTerms} onAccept={acceptTerms} onDecline={handleDeclineTerms} />
 
       {/* Only render app content if terms accepted */}
       {hasAcceptedTerms && (
