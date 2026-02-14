@@ -11,6 +11,7 @@ import { TermsAndConditionsDialog } from "@/components/TermsAndConditionsDialog"
 import { DeepLinkHandler } from "@/components/DeepLinkHandler";
 import { FCMHandler } from "@/components/FCMHandler";
 import { useTermsAcceptance } from "@/hooks/useTermsAcceptance";
+import { useOfflineAccessSync } from "@/hooks/useOfflineAccessSync";
 import { ThemeProvider } from "next-themes";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { initializePushNotifications } from "@/services/pushNotifications";
@@ -34,6 +35,9 @@ const queryClient = new QueryClient();
 
 function AppContent() {
   const { hasAcceptedTerms, isLoading, acceptTerms } = useTermsAcceptance();
+
+  // Background sync: verify offline content access is still valid
+  useOfflineAccessSync();
 
   // Initialize push notifications on app start
   useEffect(() => {

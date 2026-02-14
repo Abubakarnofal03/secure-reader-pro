@@ -27,6 +27,7 @@ import { useSegmentManager } from '@/hooks/useSegmentManager';
 import { useSessionRecovery } from '@/hooks/useSessionRecovery';
 import { useUserNotes } from '@/hooks/useUserNotes';
 import { useUserHighlights, HighlightColor } from '@/hooks/useUserHighlights';
+import { useOfflineReader } from '@/hooks/useOfflineReader';
 import { ExtractedToc } from '@/lib/pdfTocExtractor';
 import { HIGHLIGHT_COLORS } from '@/hooks/useUserHighlights';
 
@@ -89,6 +90,7 @@ export default function SecureReaderScreen() {
   const [isRecoveringSession, setIsRecoveringSession] = useState(false);
   const [isHighlightMode, setIsHighlightMode] = useState(false);
   const [highlightColor, setHighlightColor] = useState<HighlightColor>('yellow');
+  const [isReadingOffline, setIsReadingOffline] = useState(false);
   
   // Store the PDF URL in a ref so refreshes don't trigger re-renders
   const pdfUrlRef = useRef<string | null>(null);
@@ -109,22 +111,61 @@ export default function SecureReaderScreen() {
   // Ref to store the virtualizer's scroll API
   const viewerApiRef = useRef<VirtualizedPdfViewerApi | null>(null);
 
-  // Segment manager for segmented PDFs
+  // Offline reader - check if content is available locally
   const {
-    segments,
-    isLoadingSegments,
-    getSegmentForPage,
-    getSegmentUrl,
-    isLoadingSegment,
-    totalPages: segmentedTotalPages,
-    isSegmented,
-    prefetchSegmentForPage,
-    refreshAllUrls,
-  } = useSegmentManager({
+    isOffline: hasOfflineContent,
+    isCheckingOffline,
+    metadata: offlineMetadata,
+    activeSegmentUrl: offlineActiveSegmentUrl,
+    activeSegmentIndex: offlineActiveSegmentIndex,
+    getSegmentForPage: offlineGetSegmentForPage,
+    getSegmentUrl: offlineGetSegmentUrl,
+    segments: offlineSegments,
+    prefetchSegmentForPage: offlinePrefetchSegmentForPage,
+    refreshAllUrls: offlineRefreshAllUrls,
+    isLoadingSegments: offlineIsLoadingSegments,
+    isLoadingSegment: offlineIsLoadingSegment,
+    isSegmented: offlineIsSegmented,
+    totalPages: offlineTotalPages,
+  } = useOfflineReader({
     contentId: id,
     currentPage,
     enabled: hasAccess && !isLegacyContent && !loading,
   });
+
+  // Online segment manager for segmented PDFs (disabled when offline content is available)
+  const {
+    segments: onlineSegments,
+    isLoadingSegments: onlineIsLoadingSegments,
+    getSegmentForPage: onlineGetSegmentForPage,
+    getSegmentUrl: onlineGetSegmentUrl,
+    isLoadingSegment: onlineIsLoadingSegment,
+    totalPages: onlineSegmentedTotalPages,
+    isSegmented: onlineIsSegmented,
+    prefetchSegmentForPage: onlinePrefetchSegmentForPage,
+    refreshAllUrls: onlineRefreshAllUrls,
+  } = useSegmentManager({
+    contentId: id,
+    currentPage,
+    enabled: hasAccess && !isLegacyContent && !loading && !hasOfflineContent,
+  });
+
+  // Use offline data if available, otherwise fall back to online
+  const useOffline = hasOfflineContent && !isCheckingOffline;
+
+  useEffect(() => {
+    setIsReadingOffline(useOffline);
+  }, [useOffline]);
+
+  const segments = useOffline ? offlineSegments : onlineSegments;
+  const isLoadingSegments = useOffline ? offlineIsLoadingSegments : onlineIsLoadingSegments;
+  const getSegmentForPage = useOffline ? offlineGetSegmentForPage : onlineGetSegmentForPage;
+  const getSegmentUrl = useOffline ? offlineGetSegmentUrl : onlineGetSegmentUrl;
+  const isLoadingSegment = useOffline ? offlineIsLoadingSegment : onlineIsLoadingSegment;
+  const segmentedTotalPages = useOffline ? offlineTotalPages : onlineSegmentedTotalPages;
+  const isSegmented = useOffline ? offlineIsSegmented : onlineIsSegmented;
+  const prefetchSegmentForPage = useOffline ? offlinePrefetchSegmentForPage : onlinePrefetchSegmentForPage;
+  const refreshAllUrls = useOffline ? offlineRefreshAllUrls : onlineRefreshAllUrls;
 
   // Session recovery - automatically refresh session when app regains focus
   const handleSessionRecovered = useCallback(() => {
@@ -797,6 +838,11 @@ export default function SecureReaderScreen() {
             >
               Page {currentPage} of {numPages || '...'} • Tap to jump
             </button>
+            {isReadingOffline && (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium bg-success/15 text-success mt-0.5">
+                Offline
+              </span>
+            )}
           </div>
           
           {/* Zoom Controls - shrink-0 to prevent overflow */}
