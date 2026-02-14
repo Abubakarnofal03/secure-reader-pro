@@ -2,6 +2,9 @@ import React, { createContext, useContext, useEffect, useState, useRef } from 'r
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { getDeviceId, clearDeviceId } from '@/lib/device';
+import { storage } from '@/lib/storage';
+
+const CACHED_PROFILE_KEY = 'secure_reader_cached_profile';
 
 interface Profile {
   id: string;
@@ -49,24 +52,75 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Use ref to persist pendingLogin across React state updates during auth changes
   const pendingLoginRef = useRef<PendingLogin | null>(null);
 
-  const fetchProfile = async (userId: string) => {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .single();
+  const cacheProfile = async (profileData: Profile) => {
+    try {
+      await storage.setItem(CACHED_PROFILE_KEY, JSON.stringify(profileData));
+    } catch (e) {
+      console.warn('Failed to cache profile:', e);
+    }
+  };
 
-    if (error) {
-      console.error('Error fetching profile:', error);
+  const getCachedProfile = async (): Promise<Profile | null> => {
+    try {
+      const cached = await storage.getItem(CACHED_PROFILE_KEY);
+      if (cached) {
+        return JSON.parse(cached) as Profile;
+      }
+    } catch (e) {
+      console.warn('Failed to load cached profile:', e);
+    }
+    return null;
+  };
+
+  const clearCachedProfile = async () => {
+    try {
+      await storage.removeItem(CACHED_PROFILE_KEY);
+    } catch (e) {
+      console.warn('Failed to clear cached profile:', e);
+    }
+  };
+
+  const fetchProfile = async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+      if (error) {
+        console.error('Error fetching profile:', error);
+        // Fall back to cached profile when offline
+        const cached = await getCachedProfile();
+        if (cached && cached.id === userId) {
+          console.log('[Auth] Using cached profile (offline)');
+          return cached;
+        }
+        return null;
+      }
+
+      const profileData = data as Profile;
+      // Cache profile for offline use
+      await cacheProfile(profileData);
+      return profileData;
+    } catch (err) {
+      console.error('Error fetching profile (likely offline):', err);
+      // Fall back to cached profile
+      const cached = await getCachedProfile();
+      if (cached && cached.id === userId) {
+        console.log('[Auth] Using cached profile (offline fallback)');
+        return cached;
+      }
       return null;
     }
-
-    return data as Profile;
   };
 
   const validateSession = async (profileData: Profile) => {
+    // Skip device validation when offline — cached profile data may be stale
+    if (!navigator.onLine) return true;
+
     const deviceId = await getDeviceId();
-    
+
     if (profileData.active_device_id && profileData.active_device_id !== deviceId) {
       // Session was taken over by another device
       setSessionInvalidated(true);
@@ -137,7 +191,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signUp = async (email: string, password: string, name: string) => {
     // Use the web auth callback page which will redirect to the app
     const redirectUrl = `${window.location.origin}/auth-callback`;
-    
+
     const { error } = await supabase.auth.signUp({
       email,
       password,
@@ -165,7 +219,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (data.user) {
       // Check if there's an active session on another device
       const profileData = await fetchProfile(data.user.id);
-      
+
       if (profileData?.active_device_id && profileData.active_device_id !== deviceId) {
         // Device conflict detected - store credentials BEFORE signing out
         // Store in both state and ref to ensure persistence across re-renders
@@ -173,10 +227,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         pendingLoginRef.current = loginCredentials;
         setPendingLogin(loginCredentials);
         setPendingDeviceConflict(true);
-        
+
         // Sign out temporarily but keep the pending state
         await supabase.auth.signOut();
-        
+
         return { error: null, deviceConflict: true };
       }
 
@@ -248,7 +302,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             .select('*')
             .eq('id', data.user.id)
             .maybeSingle();
-          
+
           if (!profileError && profile) {
             profileData = profile as Profile;
             break;
@@ -292,15 +346,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = async () => {
     // Clear device ID from profile before signing out
     if (user) {
-      await supabase
-        .from('profiles')
-        .update({ active_device_id: null })
-        .eq('id', user.id);
+      try {
+        await supabase
+          .from('profiles')
+          .update({ active_device_id: null })
+          .eq('id', user.id);
+      } catch {
+        // Ignore errors if offline
+      }
     }
-    
+
     // Clear local device ID using the storage utility
     await clearDeviceId();
-    
+    // Clear cached profile
+    await clearCachedProfile();
+
     await supabase.auth.signOut();
     setUser(null);
     setSession(null);

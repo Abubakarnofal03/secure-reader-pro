@@ -51,6 +51,7 @@ export default function ContentListScreen() {
   const mainRef = useRef<HTMLDivElement>(null);
   const startY = useRef(0);
   const isPulling = useRef(false);
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
 
   // Offline download hook
   const {
@@ -68,11 +69,64 @@ export default function ContentListScreen() {
     fetchContent();
   }, [user]);
 
+  const LIBRARY_CACHE_KEY = 'secure_reader_library_cache';
+
+  const cacheLibraryData = useCallback(async (
+    contentItems: ContentItem[],
+    statuses: PurchaseStatus,
+    progress: ReadingProgress,
+  ) => {
+    try {
+      const { storage } = await import('@/lib/storage');
+      await storage.setItem(LIBRARY_CACHE_KEY, JSON.stringify({
+        content: contentItems,
+        purchaseStatus: statuses,
+        readingProgress: progress,
+        cachedAt: Date.now(),
+      }));
+    } catch (e) {
+      console.warn('[Library] Failed to cache library data:', e);
+    }
+  }, []);
+
+  const loadCachedLibrary = useCallback(async () => {
+    try {
+      const { storage } = await import('@/lib/storage');
+      const cached = await storage.getItem(LIBRARY_CACHE_KEY);
+      if (cached) {
+        const data = JSON.parse(cached);
+        return data as {
+          content: ContentItem[];
+          purchaseStatus: PurchaseStatus;
+          readingProgress: ReadingProgress;
+          cachedAt: number;
+        };
+      }
+    } catch (e) {
+      console.warn('[Library] Failed to load cached library:', e);
+    }
+    return null;
+  }, []);
+
   const fetchContent = useCallback(async (showRefreshIndicator = false) => {
     if (!user) return;
 
     if (showRefreshIndicator) {
       setIsRefreshing(true);
+    }
+
+    // If offline, load from cache
+    if (!navigator.onLine) {
+      console.log('[Library] Offline — loading cached library data');
+      const cached = await loadCachedLibrary();
+      if (cached) {
+        setContent(cached.content);
+        setPurchaseStatus(cached.purchaseStatus);
+        setReadingProgress(cached.readingProgress);
+      }
+      setLoading(false);
+      setIsRefreshing(false);
+      return;
     }
 
     const { data: contentData, error: contentError } = await supabase
@@ -83,6 +137,16 @@ export default function ContentListScreen() {
 
     if (contentError) {
       console.error('Error fetching content:', contentError);
+      // Fall back to cache on network error
+      const cached = await loadCachedLibrary();
+      if (cached) {
+        setContent(cached.content);
+        setPurchaseStatus(cached.purchaseStatus);
+        setReadingProgress(cached.readingProgress);
+      }
+      setLoading(false);
+      setIsRefreshing(false);
+      return;
     } else {
       setContent(contentData || []);
     }
@@ -123,9 +187,30 @@ export default function ContentListScreen() {
     });
     setReadingProgress(progressMap);
 
+    // Cache library data for offline use
+    await cacheLibraryData(contentData || [], statusMap, progressMap);
+
     setLoading(false);
     setIsRefreshing(false);
-  }, [user]);
+  }, [user, cacheLibraryData, loadCachedLibrary]);
+
+  // Track online/offline status
+  useEffect(() => {
+    const goOnline = () => {
+      setIsOffline(false);
+      fetchContent(); // Refresh when coming back online
+    };
+    const goOffline = () => {
+      setIsOffline(true);
+      setActiveTab('my-books'); // Auto-switch to library when offline
+    };
+    window.addEventListener('online', goOnline);
+    window.addEventListener('offline', goOffline);
+    return () => {
+      window.removeEventListener('online', goOnline);
+      window.removeEventListener('offline', goOffline);
+    };
+  }, [fetchContent]);
 
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
     const scrollTop = mainRef.current?.scrollTop ?? 0;
@@ -241,10 +326,12 @@ export default function ContentListScreen() {
               )}
             </button>
             <button
-              onClick={() => setActiveTab('store')}
+              onClick={() => !isOffline && setActiveTab('store')}
               className={`pb-3 text-sm font-medium transition-colors relative ${activeTab === 'store'
                 ? 'text-foreground'
-                : 'text-muted-foreground hover:text-foreground/70'
+                : isOffline
+                  ? 'text-muted-foreground/40 cursor-not-allowed'
+                  : 'text-muted-foreground hover:text-foreground/70'
                 }`}
             >
               Store
@@ -257,10 +344,12 @@ export default function ContentListScreen() {
               )}
             </button>
             <button
-              onClick={() => setActiveTab('highlights')}
+              onClick={() => !isOffline && setActiveTab('highlights')}
               className={`pb-3 text-sm font-medium transition-colors relative ${activeTab === 'highlights'
                 ? 'text-foreground'
-                : 'text-muted-foreground hover:text-foreground/70'
+                : isOffline
+                  ? 'text-muted-foreground/40 cursor-not-allowed'
+                  : 'text-muted-foreground hover:text-foreground/70'
                 }`}
             >
               Updates
