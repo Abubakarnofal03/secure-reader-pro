@@ -33,9 +33,10 @@ import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
-function AppContent() {
-  const { hasAcceptedTerms, isLoading, acceptTerms } = useTermsAcceptance();
-
+/**
+ * Renders inside AuthProvider so hooks that depend on AuthContext work correctly.
+ */
+function AuthenticatedApp() {
   // Background sync: verify offline content access is still valid
   useOfflineAccessSync();
 
@@ -43,6 +44,54 @@ function AppContent() {
   useEffect(() => {
     initializePushNotifications().catch(console.error);
   }, []);
+
+  return (
+    <>
+      <SessionInvalidatedDialog />
+      <DeviceConflictDialog />
+      <DeepLinkHandler />
+      <FCMHandler />
+      <Routes>
+        <Route path="/" element={<SplashScreen />} />
+        <Route path="/login" element={<LoginScreen />} />
+        <Route path="/signup" element={<SignupScreen />} />
+        <Route path="/forgot-password" element={<ForgotPasswordScreen />} />
+        <Route path="/reset-password" element={<ResetPasswordScreen />} />
+        <Route path="/auth-callback" element={<AuthCallbackPage />} />
+        <Route path="/confirm-email-pending" element={<EmailConfirmationPendingScreen />} />
+        <Route path="/access-pending" element={
+          <ProtectedRoute requireAccess={false}>
+            <AccessPendingScreen />
+          </ProtectedRoute>
+        } />
+        <Route path="/library" element={
+          <ProtectedRoute>
+            <ContentListScreen />
+          </ProtectedRoute>
+        } />
+        <Route path="/reader/:id" element={
+          <ProtectedRoute>
+            <SecureReaderScreen />
+          </ProtectedRoute>
+        } />
+        <Route path="/profile" element={
+          <ProtectedRoute requireAccess={false}>
+            <ProfileScreen />
+          </ProtectedRoute>
+        } />
+        <Route path="/admin" element={
+          <ProtectedRoute requireAdmin>
+            <AdminScreen />
+          </ProtectedRoute>
+        } />
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </>
+  );
+}
+
+function AppContent() {
+  const { hasAcceptedTerms, isLoading, acceptTerms } = useTermsAcceptance();
 
   const handleDeclineTerms = () => {
     // Close the app or show blocked state
@@ -67,45 +116,7 @@ function AppContent() {
       {hasAcceptedTerms && (
         <BrowserRouter>
           <AuthProvider>
-            <SessionInvalidatedDialog />
-            <DeviceConflictDialog />
-            <DeepLinkHandler />
-            <FCMHandler />
-            <Routes>
-              <Route path="/" element={<SplashScreen />} />
-              <Route path="/login" element={<LoginScreen />} />
-              <Route path="/signup" element={<SignupScreen />} />
-              <Route path="/forgot-password" element={<ForgotPasswordScreen />} />
-              <Route path="/reset-password" element={<ResetPasswordScreen />} />
-              <Route path="/auth-callback" element={<AuthCallbackPage />} />
-              <Route path="/confirm-email-pending" element={<EmailConfirmationPendingScreen />} />
-              <Route path="/access-pending" element={
-                <ProtectedRoute requireAccess={false}>
-                  <AccessPendingScreen />
-                </ProtectedRoute>
-              } />
-              <Route path="/library" element={
-                <ProtectedRoute>
-                  <ContentListScreen />
-                </ProtectedRoute>
-              } />
-              <Route path="/reader/:id" element={
-                <ProtectedRoute>
-                  <SecureReaderScreen />
-                </ProtectedRoute>
-              } />
-              <Route path="/profile" element={
-                <ProtectedRoute requireAccess={false}>
-                  <ProfileScreen />
-                </ProtectedRoute>
-              } />
-              <Route path="/admin" element={
-                <ProtectedRoute requireAdmin>
-                  <AdminScreen />
-                </ProtectedRoute>
-              } />
-              <Route path="*" element={<NotFound />} />
-            </Routes>
+            <AuthenticatedApp />
           </AuthProvider>
         </BrowserRouter>
       )}
