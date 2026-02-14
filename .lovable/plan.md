@@ -1,192 +1,141 @@
 
 
-# News/Highlights/Blogs Feature
+# Offline Reading for Android and iOS
 
 ## Overview
+Add offline reading capability so users can download purchased publications and read them without an internet connection. The existing online reading flow remains completely untouched -- offline is an additive layer that intercepts before the network path.
 
-Add a new "Highlights" section to the app that allows admins to publish news, blogs, and announcements. This content will be managed through the admin panel with a rich text editor and displayed to users in a dedicated, lazy-loaded section accessible from the main library screen.
+## How It Works (User Perspective)
+
+1. In the **Library** tab, each purchased book shows a **download button** (cloud-download icon)
+2. Tapping it downloads all PDF segments to local device storage with a progress indicator
+3. Once downloaded, a **checkmark** replaces the download icon
+4. When offline (or anytime), opening a downloaded book loads from local storage instead of fetching signed URLs
+5. When the app comes back online, it silently verifies access -- if revoked, the local cache is deleted and the user is notified
 
 ## Architecture
 
-### User Flow
+The offline layer sits **between** the existing reader and the network, acting as a transparent cache:
 
 ```text
-+------------------+     +-------------------+     +------------------+
-|   Library Tab    |     |   Highlights Tab  |     |    Article View  |
-|  Navigation Bar  | --> |   (Lazy Loaded)   | --> |   Full Content   |
-| Library | Store  |     |   List of Posts   |     |   with Rich Text |
-|  | Highlights    |     |   Cards/Preview   |     |                  |
-+------------------+     +-------------------+     +------------------+
+User opens book
+      |
+      v
+[OfflineManager] -- has local copy? -- YES --> serve from local storage
+      |                                            |
+      NO                                    (online? verify access)
+      |
+      v
+[Existing SegmentManager / render-pdf-page] -- fetch from server as today
 ```
 
-### Admin Flow
+No existing files are modified. New files wrap/intercept at integration points.
 
-```text
-+------------------+     +-------------------+     +------------------+
-|   Admin Panel    |     |   Posts Tab       |     |   Post Editor    |
-|   New Tab: Posts | --> |   Create/Edit     | --> |   Rich Text      |
-|                  |     |   List of Posts   |     |   WYSIWYG Editor |
-+------------------+     +-------------------+     +------------------+
-```
+## Technical Plan
 
-## Database Schema
+### 1. Install Capacitor Filesystem Plugin
+- Add `@capacitor/filesystem` dependency
+- This provides native file system access on Android/iOS for storing PDFs in the app's private directory
 
-New table: `posts`
+### 2. New: `src/services/offlineStorage.ts`
+Core service that handles all local file operations:
+- `downloadSegment(contentId, segmentIndex, url)` -- fetches PDF blob from signed URL, saves to app private storage via Capacitor Filesystem
+- `getLocalSegmentPath(contentId, segmentIndex)` -- returns local file URI if exists
+- `isContentDownloaded(contentId)` -- checks if all segments for a content are stored locally
+- `deleteContentCache(contentId)` -- removes all local files for a content
+- `getDownloadedContentIds()` -- returns list of all offline-available content IDs
+- Storage path: `offline-content/{contentId}/segment-{index}.pdf`
+- Stores a metadata JSON file per content with segment info, download timestamp, and version hash
 
-| Column | Type | Description |
-|--------|------|-------------|
-| id | uuid (PK) | Unique identifier |
-| title | text | Post title |
-| content | text | Rich text HTML content |
-| excerpt | text | Short preview text (150 chars) |
-| cover_image_url | text | Optional cover image |
-| category | text | 'news', 'blog', 'highlight' |
-| is_published | boolean | Draft vs published |
-| published_at | timestamp | When it was published |
-| created_at | timestamp | Creation time |
-| updated_at | timestamp | Last update |
-| author_id | uuid | Admin who created it |
+### 3. New: `src/hooks/useOfflineDownload.ts`
+Hook for managing downloads from the Library screen:
+- `downloadContent(contentId)` -- orchestrates full download: fetches segment metadata, gets signed URLs for each segment via the existing edge function, downloads each blob, saves locally
+- Exposes `downloadProgress` (0-100), `isDownloading`, `downloadError`
+- `removeDownload(contentId)` -- deletes local cache
+- `isDownloaded(contentId)` -- checks local availability
+- `downloadedContentIds` -- reactive list of all downloaded content
 
-RLS Policies:
-- SELECT: Everyone can read published posts (`is_published = true`)
-- INSERT/UPDATE/DELETE: Only admins (using `is_admin(auth.uid())`)
+### 4. New: `src/hooks/useOfflineReader.ts`
+Hook that wraps the existing segment manager for the reader:
+- On mount, checks if content is available offline via `offlineStorage`
+- If yes AND (offline OR local copy exists), returns local file URIs instead of signed URLs
+- Exposes the same interface shape as `useSegmentManager` so the reader can consume it transparently
+- Falls back to online `useSegmentManager` when no local copy exists
 
-## Implementation Plan
+### 5. New: `src/hooks/useOfflineAccessSync.ts`
+Background hook for access verification:
+- When the app comes online (listens for `online` event and `visibilitychange`)
+- For each downloaded contentId, queries `user_content_access` to verify the user still has access
+- If access revoked: deletes local cache, shows toast notification ("Access to [title] has been revoked")
+- Runs on app startup and on network reconnection
 
-### Phase 1: Database Setup
+### 6. Update: `src/components/library/LibraryBookItem.tsx`
+- Add a download/delete icon button on purchased books
+- Show download progress bar during download
+- Show "Downloaded" indicator (filled cloud icon) when available offline
+- Long-press or second tap on downloaded icon offers "Remove download" option
 
-1. Create `posts` table with the schema above
-2. Add RLS policies for public read access to published posts and admin-only write access
-3. Create storage bucket for post cover images (public bucket)
+### 7. Update: `src/pages/SecureReaderScreen.tsx`
+- Import and use `useOfflineReader` hook
+- Before the existing `useSegmentManager` call, check if offline version is available
+- If offline data exists, pass local file URIs to `VirtualizedPdfViewer` instead of signed URLs
+- Show a small "Offline" badge in the toolbar when reading from local storage
+- The existing segment manager, session recovery, and URL refresh hooks remain active but idle when offline data is being used
 
-### Phase 2: Admin Panel - Post Management
+### 8. Update: `src/App.tsx`
+- Add `useOfflineAccessSync` hook at the app level so it runs globally after authentication
 
-1. **Add new "Posts" tab to AdminScreen**
-   - Add newspaper icon tab between Content and Approvals
-   - 5 columns in tab list
+### 9. New: `src/components/library/DownloadButton.tsx`
+Dedicated component for the download UI:
+- Download icon (not downloaded), progress ring (downloading), checkmark (downloaded)
+- Handles tap to download, tap to cancel, long-press to remove
+- Uses `useOfflineDownload` hook internally
 
-2. **Create `PostEditor.tsx` component**
-   - Rich text editor using Tiptap (industry-standard, works well with React)
-   - Toolbar with formatting options: Bold, Italic, Underline, Headings (H1-H3), Lists (bullet/numbered), Links, Blockquotes
-   - Cover image upload option
-   - Title input field
-   - Category selector (News, Blog, Highlight)
-   - Excerpt field (auto-generated or manual)
-   - Publish/Save Draft toggle
+## Data Flow: Download
 
-3. **Create `PostList.tsx` component**
-   - List of all posts (drafts and published)
-   - Status badges (Draft/Published)
-   - Edit/Delete actions
-   - Quick publish toggle
+1. User taps download on a book in Library
+2. `useOfflineDownload` fetches segment list from `content_segments` table
+3. For each segment, calls `get-segment-url` edge function to get a signed URL
+4. Downloads the PDF blob via `fetch(signedUrl)`
+5. Saves blob to device filesystem via Capacitor Filesystem `writeFile()`
+6. Updates local metadata JSON with segment info
+7. Progress updates as each segment completes
 
-4. **Create `usePostManagement.ts` hook**
-   - CRUD operations for posts
-   - Cover image upload to storage
+## Data Flow: Offline Reading
 
-### Phase 3: Client-Side - Highlights Section
+1. User taps a downloaded book
+2. `SecureReaderScreen` mounts, `useOfflineReader` checks local storage
+3. Local segment files found -- creates `file://` or Capacitor `Filesystem.getUri()` URIs
+4. These URIs are passed to `VirtualizedPdfViewer` as segment URLs (same prop interface)
+5. PDF.js loads from local file URIs instead of remote signed URLs
+6. No network calls needed -- reading works fully offline
 
-1. **Add "Highlights" tab to ContentListScreen**
-   - Third tab alongside Library and Store
-   - Uses same navigation pattern with underline indicator
+## Data Flow: Access Revocation
 
-2. **Create `HighlightsSection.tsx` component (lazy loaded)**
-   - Use `React.lazy()` and `Suspense` for code splitting
-   - Only fetches posts when tab is first opened
-   - Shows loading skeleton while loading
+1. App comes online or user opens the app
+2. `useOfflineAccessSync` queries `user_content_access` for all downloaded content IDs
+3. Any content ID not found in access table -> delete local files + show toast
+4. Sync runs silently in background, does not block the UI
 
-3. **Create `PostCard.tsx` component**
-   - Card layout with cover image, title, excerpt, date
-   - Category badge
-   - Tap to open full view
+## Security Considerations
 
-4. **Create `PostViewDialog.tsx` component**
-   - Full-screen sheet/dialog showing complete post
-   - Renders HTML content safely
-   - Back button to return to list
+- Files stored in app's private directory (not accessible to other apps)
+- Capacitor Filesystem uses app-internal storage by default on both platforms
+- Watermark data is embedded during download (stored in metadata)
+- Access revocation check ensures content is removed when permissions change
+- No files are stored in the database -- only on device filesystem
 
-5. **Create `usePublishedPosts.ts` hook**
-   - Fetches published posts ordered by published_at
-   - Lazy loading pattern (only loads when needed)
+## Files Summary
 
-### Phase 4: Rich Text Editor Setup
-
-Install Tiptap dependencies:
-- `@tiptap/react`
-- `@tiptap/starter-kit` (includes Bold, Italic, Headings, Lists, etc.)
-- `@tiptap/extension-link`
-- `@tiptap/extension-underline`
-- `@tiptap/extension-placeholder`
-
-Create reusable `RichTextEditor.tsx` component with:
-- Toolbar with formatting buttons
-- Editor content area
-- HTML output for saving
-- Matches app's design system
-
----
-
-## Files to Create
-
-| File | Purpose |
-|------|---------|
-| `src/components/admin/PostEditor.tsx` | Rich text editor for creating/editing posts |
-| `src/components/admin/PostList.tsx` | List of all posts in admin |
-| `src/components/admin/RichTextEditor.tsx` | Reusable Tiptap editor component |
-| `src/components/admin/EditorToolbar.tsx` | Toolbar for rich text editor |
-| `src/components/highlights/HighlightsSection.tsx` | Lazy-loaded highlights tab content |
-| `src/components/highlights/PostCard.tsx` | Post preview card |
-| `src/components/highlights/PostViewDialog.tsx` | Full post view dialog |
-| `src/hooks/usePostManagement.ts` | Admin CRUD hook for posts |
-| `src/hooks/usePublishedPosts.ts` | Client-side posts fetching hook |
-
-## Files to Modify
-
-| File | Changes |
-|------|---------|
-| `src/pages/AdminScreen.tsx` | Add Posts tab |
-| `src/pages/ContentListScreen.tsx` | Add Highlights tab with lazy loading |
-
----
-
-## Technical Details
-
-### Lazy Loading Pattern
-
-```text
-ContentListScreen.tsx
-       |
-       v
-  TabType = 'my-books' | 'store' | 'highlights'
-       |
-       v
-  When highlights tab selected:
-       |
-       v
-  React.lazy(() => import('./HighlightsSection'))
-       |
-       v
-  Suspense with loading skeleton
-       |
-       v
-  HighlightsSection fetches posts only when mounted
-```
-
-### Security Considerations
-- Rich text content stored as HTML
-- Render using `dangerouslySetInnerHTML` with controlled input (admin-only content creation)
-- Cover images stored in public storage bucket
-- RLS ensures only admins can create/modify posts
-
-### Performance Benefits
-- Lazy loading prevents unnecessary network requests on app start
-- Code splitting reduces initial bundle size
-- Posts only fetched when user navigates to Highlights tab
-
-### Dependencies to Add
-- `@tiptap/react` - Core Tiptap React integration
-- `@tiptap/starter-kit` - Basic formatting extensions
-- `@tiptap/extension-link` - Link support
-- `@tiptap/extension-underline` - Underline support
-- `@tiptap/extension-placeholder` - Placeholder text
+| Action | File |
+|--------|------|
+| NEW | `src/services/offlineStorage.ts` |
+| NEW | `src/hooks/useOfflineDownload.ts` |
+| NEW | `src/hooks/useOfflineReader.ts` |
+| NEW | `src/hooks/useOfflineAccessSync.ts` |
+| NEW | `src/components/library/DownloadButton.tsx` |
+| EDIT | `src/components/library/LibraryBookItem.tsx` (add download button) |
+| EDIT | `src/pages/SecureReaderScreen.tsx` (add offline reader hook) |
+| EDIT | `src/App.tsx` (add access sync hook) |
+| INSTALL | `@capacitor/filesystem` |
 
