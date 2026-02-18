@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Eye, EyeOff, Mail, Lock, Shield } from 'lucide-react';
@@ -14,9 +14,16 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const { signIn } = useAuth();
+  const { signIn, user, profile, loading } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+
+  // If already authenticated, redirect to library
+  useEffect(() => {
+    if (!loading && user && profile) {
+      navigate(profile.role === 'admin' ? '/admin' : '/library', { replace: true });
+    }
+  }, [loading, user, profile, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,7 +47,9 @@ export default function LoginScreen() {
       return;
     }
 
-    navigate('/', { replace: true });
+    // Navigation is handled by the useEffect above once profile loads
+    // This ensures admins go to /admin and users go to /library
+    setIsLoading(false);
   };
 
   return (

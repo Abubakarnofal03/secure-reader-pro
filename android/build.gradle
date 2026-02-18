@@ -35,6 +35,13 @@ subprojects {
             }
         }
         
+        // Force Kotlin JVM toolchain to 17 to override plugins that require 21
+        if (project.extensions.findByName("kotlin") != null) {
+            project.kotlin {
+                jvmToolchain(17)
+            }
+        }
+        
         // Force Kotlin to use JVM 17 (Name-based matching to avoid class loading issues)
         project.tasks.configureEach { task ->
             if (task.name.startsWith("compile") && task.name.endsWith("Kotlin")) {
