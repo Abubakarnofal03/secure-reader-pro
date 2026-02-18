@@ -5,6 +5,9 @@ import { getDeviceId, clearDeviceId } from '@/lib/device';
 import { storage } from '@/lib/storage';
 
 const CACHED_PROFILE_KEY = 'secure_reader_cached_profile';
+const LOGIN_FLAG_KEY = 'secure_reader_logged_in';
+const CACHED_USER_KEY = 'secure_reader_cached_user';
+const CACHED_SESSION_KEY = 'secure_reader_cached_session';
 
 interface Profile {
   id: string;
@@ -75,9 +78,51 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const clearCachedProfile = async () => {
     try {
       await storage.removeItem(CACHED_PROFILE_KEY);
+      await storage.removeItem(LOGIN_FLAG_KEY);
+      await storage.removeItem(CACHED_USER_KEY);
+      await storage.removeItem(CACHED_SESSION_KEY);
     } catch (e) {
       console.warn('Failed to clear cached profile:', e);
     }
+  };
+
+  /** Persist login state so the app never forgets the user on native */
+  const persistLoginState = async (userData: User, sessionData: Session, profileData: Profile) => {
+    try {
+      await storage.setItem(LOGIN_FLAG_KEY, 'true');
+      await storage.setItem(CACHED_USER_KEY, JSON.stringify(userData));
+      await storage.setItem(CACHED_SESSION_KEY, JSON.stringify(sessionData));
+      await cacheProfile(profileData);
+      console.log('[Auth] Login state persisted for offline access');
+    } catch (e) {
+      console.warn('Failed to persist login state:', e);
+    }
+  };
+
+  /** Load cached login state when Supabase session isn't available (offline) */
+  const loadCachedLoginState = async (): Promise<{ user: User; session: Session; profile: Profile } | null> => {
+    try {
+      const flag = await storage.getItem(LOGIN_FLAG_KEY);
+      if (flag !== 'true') return null;
+
+      const [cachedUser, cachedSession, cachedProfile] = await Promise.all([
+        storage.getItem(CACHED_USER_KEY),
+        storage.getItem(CACHED_SESSION_KEY),
+        storage.getItem(CACHED_PROFILE_KEY),
+      ]);
+
+      if (cachedUser && cachedSession && cachedProfile) {
+        console.log('[Auth] Restoring cached login state (offline-safe)');
+        return {
+          user: JSON.parse(cachedUser) as User,
+          session: JSON.parse(cachedSession) as Session,
+          profile: JSON.parse(cachedProfile) as Profile,
+        };
+      }
+    } catch (e) {
+      console.warn('Failed to load cached login state:', e);
+    }
+    return null;
   };
 
   const fetchProfile = async (userId: string) => {
@@ -152,6 +197,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const profileData = await fetchProfile(currentSession.user.id);
             if (profileData) {
               setProfile(profileData);
+              // Persist login state for offline resilience
+              await persistLoginState(currentSession.user, currentSession, profileData);
               await validateSession(profileData);
             }
           }, 0);
@@ -168,19 +215,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     );
 
     // Then check for existing session
-    supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
-      setSession(currentSession);
-      setUser(currentSession?.user ?? null);
-
+    supabase.auth.getSession().then(async ({ data: { session: currentSession } }) => {
       if (currentSession?.user) {
-        fetchProfile(currentSession.user.id).then((profileData) => {
+        setSession(currentSession);
+        setUser(currentSession.user);
+        fetchProfile(currentSession.user.id).then(async (profileData) => {
           if (profileData) {
             setProfile(profileData);
+            await persistLoginState(currentSession.user, currentSession, profileData);
             validateSession(profileData);
           }
           setLoading(false);
         });
       } else {
+        // No Supabase session — try to restore from local cache (offline/token expired)
+        const cached = await loadCachedLoginState();
+        if (cached) {
+          console.log('[Auth] No active session but found cached login — restoring');
+          setUser(cached.user);
+          setSession(cached.session);
+          setProfile(cached.profile);
+          // Try to refresh in background if online
+          if (navigator.onLine) {
+            supabase.auth.refreshSession().then(({ data }) => {
+              if (data.session) {
+                console.log('[Auth] Background token refresh successful');
+                setSession(data.session);
+                setUser(data.session.user);
+                persistLoginState(data.session.user, data.session, cached.profile);
+              }
+            }).catch(() => {
+              console.log('[Auth] Background refresh failed — staying with cached state');
+            });
+          }
+        }
         setLoading(false);
       }
     });
@@ -247,9 +315,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.error('Error updating device session:', updateError);
       }
 
-      // Refresh profile to get updated data
-      if (profileData) {
-        setProfile({ ...profileData, active_device_id: deviceId });
+      // Refresh profile to get updated data and persist login state
+      if (profileData && data.session) {
+        const updatedProfile = { ...profileData, active_device_id: deviceId };
+        setProfile(updatedProfile);
+        await persistLoginState(data.user, data.session, updatedProfile);
       }
     }
 

@@ -186,6 +186,11 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
       setUploadStatus('Creating content record...');
       setUploadProgress(18);
 
+      // Sanitize TOC data to remove null characters (\u0000) that PostgreSQL can't store
+      const sanitizedTocData = tocData ? JSON.parse(
+        JSON.stringify(tocData).replace(/\\u0000/g, '').replace(/\u0000/g, '')
+      ) : null;
+
       const { data: contentData, error: insertError } = await supabase
         .from('content')
         .insert({
@@ -198,7 +203,7 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
           cover_url: coverUrl,
           category: category,
           total_pages: totalPages,
-          table_of_contents: tocData,
+          table_of_contents: sanitizedTocData,
         })
         .select('id')
         .single();
