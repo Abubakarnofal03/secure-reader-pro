@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { X, Loader2, AlertTriangle, ZoomIn, ZoomOut, Menu, BookOpen, RefreshCw, StickyNote, Highlighter } from 'lucide-react';
+import { X, Loader2, AlertTriangle, ZoomIn, ZoomOut, Menu, BookOpen, RefreshCw, StickyNote, Highlighter, Download, Info } from 'lucide-react';
 import { Document, pdfjs } from 'react-pdf';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Watermark } from '@/components/Watermark';
@@ -29,6 +30,9 @@ import { useUserNotes } from '@/hooks/useUserNotes';
 import { useUserHighlights, HighlightColor } from '@/hooks/useUserHighlights';
 import { useOfflineReader } from '@/hooks/useOfflineReader';
 import { isContentFullyDownloaded, getContentMetadata } from '@/services/offlineStorage';
+import { useFirstTimeFlags } from '@/hooks/useFirstTimeFlags';
+import { OnboardingTutorial } from '@/components/OnboardingTutorial';
+import { useAutoCache } from '@/hooks/useAutoCache';
 import { ExtractedToc } from '@/lib/pdfTocExtractor';
 import { HIGHLIGHT_COLORS } from '@/hooks/useUserHighlights';
 
@@ -92,6 +96,30 @@ export default function SecureReaderScreen() {
   const [isHighlightMode, setIsHighlightMode] = useState(false);
   const [highlightColor, setHighlightColor] = useState<HighlightColor>('yellow');
   const [isReadingOffline, setIsReadingOffline] = useState(false);
+  const [showFirstTimeDownloadHint, setShowFirstTimeDownloadHint] = useState(false);
+
+  // First-time tutorial flags
+  const { isFirstReaderOpen, showDownloadHint, markReaderOpened, markDownloadHintShown } = useFirstTimeFlags();
+  const [showReaderTutorial, setShowReaderTutorial] = useState(false);
+
+  // Show reader tutorial once content is loaded
+  useEffect(() => {
+    if (isFirstReaderOpen && content && numPages > 0) {
+      setShowReaderTutorial(true);
+    }
+  }, [isFirstReaderOpen, content, numPages]);
+
+  // Show download hint after tutorial is dismissed (or if tutorial was already shown)
+  useEffect(() => {
+    if (showDownloadHint && content && numPages > 0 && !showReaderTutorial && !isReadingOffline) {
+      setShowFirstTimeDownloadHint(true);
+      const timer = setTimeout(() => {
+        setShowFirstTimeDownloadHint(false);
+        markDownloadHintShown();
+      }, 6000);
+      return () => clearTimeout(timer);
+    }
+  }, [showDownloadHint, content, numPages, showReaderTutorial, isReadingOffline, markDownloadHintShown]);
 
   // Store the PDF URL in a ref so refreshes don't trigger re-renders
   const pdfUrlRef = useRef<string | null>(null);
@@ -219,6 +247,16 @@ export default function SecureReaderScreen() {
     deleteHighlight,
     getHighlightsForPage,
   } = useUserHighlights({ contentId: id, enabled: hasAccess });
+
+  // Auto-exit highlight mode wrapper
+  const handleAddHighlightAndExit = useCallback(
+    async (pageNumber: number, xPercent: number, yPercent: number, widthPercent: number, heightPercent: number, color?: HighlightColor) => {
+      const result = await addHighlight(pageNumber, xPercent, yPercent, widthPercent, heightPercent, color);
+      setIsHighlightMode(false);
+      return result;
+    },
+    [addHighlight],
+  );
 
   const {
     savedProgress,
@@ -628,6 +666,15 @@ export default function SecureReaderScreen() {
     // Don't set error state - let the user continue reading with existing URL
   }, []);
 
+  // Auto-cache publication in background for faster future access
+  useAutoCache({
+    contentId: id,
+    enabled: hasAccess && !isReadingOffline && !!content && !loading,
+    title: content?.title,
+    watermarkName: content?.watermark?.userName,
+    watermarkEmail: content?.watermark?.userEmail,
+  });
+
   useSignedUrlRefresh({
     contentId: id,
     initialUrl: pdfUrlRef.current,
@@ -769,6 +816,37 @@ export default function SecureReaderScreen() {
       }}
     >
       <ScrollProgressBar currentPage={currentPage} totalPages={numPages} />
+
+      {/* Reader Tutorial */}
+      <AnimatePresence>
+        {showReaderTutorial && (
+          <OnboardingTutorial
+            type="reader"
+            onComplete={() => {
+              setShowReaderTutorial(false);
+              markReaderOpened();
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* First-time download hint */}
+      <AnimatePresence>
+        {showFirstTimeDownloadHint && !showReaderTutorial && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="fixed top-14 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 rounded-full bg-primary/90 backdrop-blur-sm px-4 py-2 shadow-lg max-w-[90vw]"
+          >
+            <Download className="h-4 w-4 text-primary-foreground flex-shrink-0" />
+            <span className="text-xs font-medium text-primary-foreground">For faster loading & offline access, download this publication from the library.</span>
+            <button onClick={() => { setShowFirstTimeDownloadHint(false); markDownloadHintShown(); }} className="ml-1 flex-shrink-0">
+              <X className="h-3.5 w-3.5 text-primary-foreground/70" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <SecurityWarning
         isRecording={isRecording}
@@ -1010,7 +1088,7 @@ export default function SecureReaderScreen() {
                 getNotesForPage={getNotesForPage}
                 isHighlightMode={isHighlightMode}
                 highlightColor={highlightColor}
-                onAddHighlight={addHighlight}
+                onAddHighlight={handleAddHighlightAndExit}
                 onDeleteHighlight={deleteHighlight}
                 onOpenNotesPanel={() => setShowNotesPanel(true)}
               />
@@ -1056,7 +1134,7 @@ export default function SecureReaderScreen() {
                     getNotesForPage={getNotesForPage}
                     isHighlightMode={isHighlightMode}
                     highlightColor={highlightColor}
-                    onAddHighlight={addHighlight}
+                    onAddHighlight={handleAddHighlightAndExit}
                     onDeleteHighlight={deleteHighlight}
                     onOpenNotesPanel={() => setShowNotesPanel(true)}
                   />

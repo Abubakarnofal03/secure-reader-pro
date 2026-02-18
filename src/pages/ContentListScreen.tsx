@@ -11,6 +11,8 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { ContactSupport } from '@/components/ContactSupport';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useOfflineDownload } from '@/hooks/useOfflineDownload';
+import { useFirstTimeFlags } from '@/hooks/useFirstTimeFlags';
+import { OnboardingTutorial } from '@/components/OnboardingTutorial';
 import logo from '@/assets/logo.png';
 
 // Lazy load HighlightsSection to prevent unnecessary network requests on app start
@@ -52,6 +54,15 @@ export default function ContentListScreen() {
   const startY = useRef(0);
   const isPulling = useRef(false);
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
+  const { isFirstAppOpen, markAppOpened } = useFirstTimeFlags();
+  const [showAppTutorial, setShowAppTutorial] = useState(false);
+
+  // Show app tutorial on first open
+  useEffect(() => {
+    if (isFirstAppOpen && !loading) {
+      setShowAppTutorial(true);
+    }
+  }, [isFirstAppOpen, loading]);
 
   // Offline download hook
   const {
@@ -491,6 +502,19 @@ export default function ContentListScreen() {
         onClose={() => setSelectedContent(null)}
         onPurchaseSubmitted={fetchContent}
       />
+
+      {/* App Tutorial */}
+      <AnimatePresence>
+        {showAppTutorial && (
+          <OnboardingTutorial
+            type="app"
+            onComplete={() => {
+              setShowAppTutorial(false);
+              markAppOpened();
+            }}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

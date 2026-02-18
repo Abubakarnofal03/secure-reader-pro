@@ -335,7 +335,7 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
         Upload New Publication
       </h3>
 
-      <div className="grid grid-cols-[auto_1fr] gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-[auto_1fr] gap-4">
 
         {/* Cover Upload */}
         <div>
@@ -349,14 +349,14 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
             <Label htmlFor="file">PDF File</Label>
             <div className="mt-1.5">
               {selectedFile ? (
-                <div className="flex items-center justify-between gap-2 rounded-lg bg-secondary p-3 overflow-hidden">
-                  <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
+              <div className="flex items-center gap-2 rounded-lg bg-secondary p-3">
                     <FileUp className="h-4 w-4 flex-shrink-0 text-primary" />
-                    <span className="truncate text-sm flex-1 min-w-0">{selectedFile.name}</span>
-                    <span className="text-xs text-muted-foreground whitespace-nowrap flex-shrink-0">
-                      ({(selectedFile.size / 1024 / 1024).toFixed(2)} MB)
-                    </span>
-                  </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm">{selectedFile.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
+                      </p>
+                    </div>
                   <Button variant="ghost" size="sm" onClick={clearSelection} disabled={uploading} className="flex-shrink-0">
                     <X className="h-4 w-4" />
                   </Button>
