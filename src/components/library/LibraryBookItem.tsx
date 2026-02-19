@@ -64,19 +64,37 @@ export function LibraryBookItem({
     return categoryConfig?.label || 'Reference';
   };
 
+  const isThisDownloading = isDownloading && downloadingContentId === id;
+
   return (
     <motion.button
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: index * 0.04, duration: 0.25 }}
       onClick={onClick}
-      disabled={isPending}
-      className={`group w-full flex items-center gap-4 p-4 rounded-xl bg-card border text-left transition-all duration-200 active:scale-[0.99] ${
+      disabled={isPending || isThisDownloading}
+      className={`group w-full flex items-center gap-4 p-4 rounded-xl bg-card border text-left transition-all duration-200 active:scale-[0.99] relative overflow-hidden ${
         isPending
           ? 'opacity-60 cursor-not-allowed border-border/40'
-          : 'border-border/50 hover:border-primary/30 hover:shadow-sm'
+          : isThisDownloading
+            ? 'border-primary/40'
+            : 'border-border/50 hover:border-primary/30 hover:shadow-sm'
       }`}
     >
+      {/* Water-fill download overlay */}
+      {isThisDownloading && (
+        <>
+          <div
+            className="absolute bottom-0 left-0 right-0 bg-primary/20 transition-all duration-300 ease-out rounded-b-xl"
+            style={{ height: `${downloadProgress}%` }}
+          />
+          <div className="absolute inset-0 flex items-center justify-center z-10">
+            <span className="text-sm font-bold text-primary bg-background/80 px-3 py-1 rounded-full backdrop-blur-sm">
+              {downloadProgress}%
+            </span>
+          </div>
+        </>
+      )}
       {/* Book Cover / Icon */}
       <div className="relative flex-shrink-0 w-16 h-20 rounded-lg overflow-hidden bg-gradient-to-br from-primary to-primary/80 border border-primary/30 shadow-md">
         {coverUrl ? (

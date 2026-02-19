@@ -55,32 +55,9 @@ export function DownloadButton({
   // Don't render on web
   if (!Capacitor.isNativePlatform()) return null;
 
-  // Downloading state: show progress ring
+  // Downloading state: handled by parent cell water-fill overlay
   if (isThisDownloading) {
-    const circumference = 2 * Math.PI * 12;
-    const strokeDashoffset = circumference - (downloadProgress / 100) * circumference;
-
-    return (
-      <div
-        className="flex-shrink-0 flex items-center justify-center w-10 h-10"
-        onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}
-      >
-        <div className="relative w-8 h-8">
-          <svg className="w-8 h-8 -rotate-90" viewBox="0 0 28 28">
-            <circle cx="14" cy="14" r="12" fill="none" stroke="hsl(var(--muted))" strokeWidth="2" />
-            <circle
-              cx="14" cy="14" r="12" fill="none"
-              stroke="hsl(var(--primary))" strokeWidth="2" strokeLinecap="round"
-              strokeDasharray={circumference} strokeDashoffset={strokeDashoffset}
-              className="transition-all duration-300"
-            />
-          </svg>
-          <span className="absolute inset-0 flex items-center justify-center text-[9px] font-semibold text-foreground">
-            {downloadProgress}%
-          </span>
-        </div>
-      </div>
-    );
+    return null;
   }
 
   // Downloaded state

@@ -5,6 +5,7 @@ import { Library, Sparkles, RefreshCw } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { PurchaseDialog } from '@/components/library/PurchaseDialog';
+import { useToast } from '@/hooks/use-toast';
 import { LibraryBookItem } from '@/components/library/LibraryBookItem';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -18,6 +19,9 @@ import logo from '@/assets/logo.png';
 // Lazy load HighlightsSection to prevent unnecessary network requests on app start
 const HighlightsSection = lazy(() => import('@/components/highlights/HighlightsSection'));
 
+// PDFs larger than this must be downloaded before reading
+const LARGE_PDF_THRESHOLD = 30 * 1024 * 1024; // 30 MB
+
 interface ContentItem {
   id: string;
   title: string;
@@ -27,6 +31,7 @@ interface ContentItem {
   currency: string;
   cover_url: string | null;
   category: string | null;
+  file_size: number | null;
 }
 
 interface PurchaseStatus {
@@ -42,6 +47,7 @@ type TabType = 'my-books' | 'store' | 'highlights';
 export default function ContentListScreen() {
   const { profile, user } = useAuth();
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [content, setContent] = useState<ContentItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [purchaseStatus, setPurchaseStatus] = useState<PurchaseStatus>({});
@@ -142,7 +148,7 @@ export default function ContentListScreen() {
 
     const { data: contentData, error: contentError } = await supabase
       .from('content')
-      .select('id, title, description, file_path, price, currency, cover_url, category')
+      .select('id, title, description, file_path, price, currency, cover_url, category, file_size')
       .eq('is_active', true)
       .order('created_at', { ascending: false });
 
@@ -258,6 +264,16 @@ export default function ContentListScreen() {
   const handleContentClick = (item: ContentItem) => {
     const status = purchaseStatus[item.id];
     if (status === 'purchased') {
+      // Gate large PDFs: must be downloaded first
+      const isLarge = item.file_size && item.file_size > LARGE_PDF_THRESHOLD;
+      if (isLarge && !isDownloaded(item.id)) {
+        toast({
+          title: 'Download Required',
+          description: 'This publication is too large to stream. Downloading now for the best experience.',
+        });
+        downloadContent(item.id, item.title, profile?.name || undefined, profile?.email);
+        return;
+      }
       navigate(`/reader/${item.id}`);
     } else if (status !== 'pending') {
       setSelectedContent(item);
