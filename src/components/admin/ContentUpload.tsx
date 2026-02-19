@@ -204,7 +204,8 @@ export function ContentUpload({ onSuccess }: ContentUploadProps) {
           category: category,
           total_pages: totalPages,
           table_of_contents: sanitizedTocData,
-        })
+          file_size: selectedFile.size,
+        } as any)
         .select('id')
         .single();
 

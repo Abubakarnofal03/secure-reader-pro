@@ -1,0 +1,1 @@
+ALTER TABLE public.content ADD COLUMN file_size bigint;

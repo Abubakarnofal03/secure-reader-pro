@@ -3,8 +3,10 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { X, Loader2, AlertTriangle, ZoomIn, ZoomOut, Menu, BookOpen, RefreshCw, StickyNote, Highlighter, Download, Info } from 'lucide-react';
 import { Document, pdfjs } from 'react-pdf';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Capacitor } from '@capacitor/core';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
+import { useOfflineDownload } from '@/hooks/useOfflineDownload';
 import { Watermark } from '@/components/Watermark';
 import { SecurityWarning } from '@/components/SecurityWarning';
 import { GoToPageDialog } from '@/components/reader/GoToPageDialog';
@@ -97,7 +99,18 @@ export default function SecureReaderScreen() {
   const [highlightColor, setHighlightColor] = useState<HighlightColor>('yellow');
   const [isReadingOffline, setIsReadingOffline] = useState(false);
   const [showFirstTimeDownloadHint, setShowFirstTimeDownloadHint] = useState(false);
+  const [requiresDownload, setRequiresDownload] = useState(false);
 
+  // Offline download hook for large-file gating
+  const {
+    downloadContent: readerDownloadContent,
+    isDownloading: readerIsDownloading,
+    downloadProgress: readerDownloadProgress,
+    isDownloaded: readerIsDownloaded,
+    refreshDownloadedList: readerRefreshList,
+  } = useOfflineDownload();
+
+  const LARGE_PDF_THRESHOLD = 30 * 1024 * 1024; // 30 MB
   // First-time tutorial flags
   const { isFirstReaderOpen, showDownloadHint, markReaderOpened, markDownloadHintShown } = useFirstTimeFlags();
   const [showReaderTutorial, setShowReaderTutorial] = useState(false);
@@ -532,12 +545,30 @@ export default function SecureReaderScreen() {
           // Fetch content metadata (title, watermark info, TOC) directly
           const { data: contentData, error: contentError } = await supabase
             .from('content')
-            .select('title, total_pages, table_of_contents')
+            .select('title, total_pages, table_of_contents, file_size')
             .eq('id', id)
             .single();
 
           if (contentError) {
             throw new Error('Failed to load content metadata');
+          }
+
+          // Check if large file requires download first (native only)
+          const fileSize = (contentData as any).file_size as number | null;
+          if (Capacitor.isNativePlatform() && fileSize && fileSize > LARGE_PDF_THRESHOLD) {
+            const alreadyDownloaded = readerIsDownloaded(id);
+            if (!alreadyDownloaded) {
+              setRequiresDownload(true);
+              setLoading(false);
+              // Set content title for display
+              setContent({
+                title: contentData.title,
+                signedUrl: '',
+                expiresAt: 0,
+                watermark: { userName: '', userEmail: '', timestamp: '', sessionId: '' },
+              });
+              return;
+            }
           }
 
           // Use stored TOC if available
@@ -795,6 +826,66 @@ export default function SecureReaderScreen() {
         <button
           onClick={handleClose}
           className="px-6 py-3 bg-primary text-primary-foreground rounded-xl font-medium text-sm shadow-[var(--shadow-md)] hover:shadow-[var(--shadow-lg)] transition-all"
+        >
+          Return to Library
+        </button>
+      </div>
+    );
+  }
+
+  // Large file download gate
+  if (requiresDownload) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-background px-6 safe-top safe-bottom">
+        <div className="relative mb-6">
+          <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-primary/10 border border-primary/20">
+            <Download className="h-10 w-10 text-primary" />
+          </div>
+        </div>
+        <h2 className="font-display text-lg font-semibold text-foreground mb-2 text-center">
+          {content?.title || 'Publication'}
+        </h2>
+        <p className="text-sm text-muted-foreground mb-6 text-center max-w-xs">
+          This publication is large and needs to be downloaded first for the best reading experience.
+        </p>
+
+        {readerIsDownloading ? (
+          <div className="w-64 space-y-3">
+            <div className="relative h-4 rounded-full bg-muted overflow-hidden">
+              <div
+                className="absolute bottom-0 left-0 right-0 bg-primary/80 transition-all duration-300 ease-out"
+                style={{ height: `${readerDownloadProgress}%` }}
+              />
+              <div
+                className="absolute top-0 left-0 h-full bg-primary transition-all duration-300 rounded-full"
+                style={{ width: `${readerDownloadProgress}%` }}
+              />
+            </div>
+            <p className="text-center text-sm font-medium text-foreground">{readerDownloadProgress}%</p>
+            <p className="text-center text-xs text-muted-foreground">Downloading...</p>
+          </div>
+        ) : (
+          <button
+            onClick={async () => {
+              if (id) {
+                await readerDownloadContent(id, content?.title || '', profile?.name || undefined, profile?.email);
+                await readerRefreshList();
+                setRequiresDownload(false);
+                setLoading(true);
+                // Re-trigger content fetch
+                window.location.reload();
+              }
+            }}
+            className="px-8 py-3 bg-primary text-primary-foreground rounded-xl font-medium text-sm shadow-[var(--shadow-md)] hover:shadow-[var(--shadow-lg)] transition-all flex items-center gap-2"
+          >
+            <Download className="h-4 w-4" />
+            Download Now
+          </button>
+        )}
+
+        <button
+          onClick={handleClose}
+          className="mt-4 text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
           Return to Library
         </button>

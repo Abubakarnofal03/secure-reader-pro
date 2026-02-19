@@ -43,6 +43,7 @@ export type Database = {
           currency: string
           description: string | null
           file_path: string
+          file_size: number | null
           id: string
           is_active: boolean
           price: number
@@ -58,6 +59,7 @@ export type Database = {
           currency?: string
           description?: string | null
           file_path: string
+          file_size?: number | null
           id?: string
           is_active?: boolean
           price?: number
@@ -73,6 +75,7 @@ export type Database = {
           currency?: string
           description?: string | null
           file_path?: string
+          file_size?: number | null
           id?: string
           is_active?: boolean
           price?: number
