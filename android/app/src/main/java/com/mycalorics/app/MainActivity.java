@@ -7,6 +7,9 @@ import com.getcapacitor.BridgeActivity;
 public class MainActivity extends BridgeActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        // Register native plugins before super.onCreate
+        registerPlugin(NativeDownloaderPlugin.class);
+        
         super.onCreate(savedInstanceState);
         
         // Prevent screenshots and screen recording

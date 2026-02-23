@@ -5,6 +5,7 @@
 
 import { Capacitor } from '@capacitor/core';
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
+import { NativeDownloader } from '@/plugins/NativeDownloaderPlugin';
 
 const BASE_DIR = 'offline-content';
 
@@ -62,6 +63,7 @@ async function ensureDir(contentId: string): Promise<void> {
 
 /**
  * Download a PDF segment from a signed URL and save it locally.
+ * (Web/iOS fallback — uses fetch + base64 conversion)
  */
 export async function downloadSegment(
   contentId: string,
@@ -86,6 +88,40 @@ export async function downloadSegment(
     data: base64,
     directory: Directory.Data,
   });
+}
+
+/**
+ * Download a PDF segment using the native HTTP stack (Android only).
+ * Uses HttpURLConnection for full bandwidth utilization and direct file writing.
+ */
+export async function downloadSegmentNative(
+  contentId: string,
+  segmentIndex: number,
+  signedUrl: string,
+): Promise<void> {
+  const filePath = `${contentDir(contentId)}/${segmentFileName(segmentIndex)}`;
+
+  await NativeDownloader.downloadFile({
+    url: signedUrl,
+    filePath: filePath,
+  });
+}
+
+/**
+ * Auto-select the best download method:
+ * - Android: use native HttpURLConnection for full bandwidth
+ * - iOS/Web: use fetch() fallback
+ */
+export async function downloadSegmentAuto(
+  contentId: string,
+  segmentIndex: number,
+  signedUrl: string,
+): Promise<void> {
+  if (Capacitor.getPlatform() === 'android') {
+    await downloadSegmentNative(contentId, segmentIndex, signedUrl);
+  } else {
+    await downloadSegment(contentId, segmentIndex, signedUrl);
+  }
 }
 
 /**

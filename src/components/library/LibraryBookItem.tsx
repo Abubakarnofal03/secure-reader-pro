@@ -73,13 +73,12 @@ export function LibraryBookItem({
       transition={{ delay: index * 0.04, duration: 0.25 }}
       onClick={onClick}
       disabled={isPending || isThisDownloading}
-      className={`group w-full flex items-center gap-4 p-4 rounded-xl bg-card border text-left transition-all duration-200 active:scale-[0.99] relative overflow-hidden ${
-        isPending
+      className={`group w-full flex items-center gap-4 p-4 rounded-xl bg-card border text-left transition-all duration-200 active:scale-[0.99] relative overflow-hidden ${isPending
           ? 'opacity-60 cursor-not-allowed border-border/40'
           : isThisDownloading
             ? 'border-primary/40'
             : 'border-border/50 hover:border-primary/30 hover:shadow-sm'
-      }`}
+        }`}
     >
       {/* Water-fill download overlay */}
       {isThisDownloading && (
@@ -108,7 +107,7 @@ export function LibraryBookItem({
           <div className="h-full w-full flex flex-col items-center justify-center">
             {/* Book spine effect */}
             <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary-foreground/20" />
-            
+
             {/* Category icon or book icon */}
             {categoryConfig && categoryConfig.id !== 'general' ? (
               <categoryConfig.icon className="h-8 w-8 text-primary-foreground/90" />
@@ -163,7 +162,7 @@ export function LibraryBookItem({
         <h3 className="font-display text-base font-semibold text-foreground leading-snug line-clamp-2">
           {title}
         </h3>
-        
+
         <div className="mt-1.5 flex items-center gap-2 flex-wrap">
           {showInMyBooks ? (
             <>
@@ -221,9 +220,8 @@ export function LibraryBookItem({
       )}
 
       {/* Chevron */}
-      <ChevronRight className={`h-5 w-5 flex-shrink-0 transition-colors ${
-        isPurchased ? 'text-muted-foreground' : 'text-muted-foreground/40'
-      }`} />
+      <ChevronRight className={`h-5 w-5 flex-shrink-0 transition-colors ${isPurchased ? 'text-muted-foreground' : 'text-muted-foreground/40'
+        }`} />
     </motion.button>
   );
 }

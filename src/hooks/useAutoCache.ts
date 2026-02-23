@@ -7,7 +7,7 @@ import { Capacitor } from '@capacitor/core';
 import { supabase } from '@/integrations/supabase/client';
 import { getDeviceId } from '@/lib/device';
 import {
-  downloadSegment,
+  downloadSegmentAuto,
   saveContentMetadata,
   hasLocalSegment,
   getContentMetadata,
@@ -101,7 +101,7 @@ export function useAutoCache({
             if (urlError || urlData?.error || cancelled) continue;
 
             // Download and save - with a small delay to avoid overloading
-            await downloadSegment(contentId, seg.segment_index, urlData.signedUrl);
+            await downloadSegmentAuto(contentId, seg.segment_index, urlData.signedUrl);
 
             segmentMeta.push({
               index: seg.segment_index,

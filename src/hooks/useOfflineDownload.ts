@@ -3,13 +3,14 @@ import { Capacitor } from '@capacitor/core';
 import { supabase } from '@/integrations/supabase/client';
 import { getDeviceId } from '@/lib/device';
 import {
-  downloadSegment,
+  downloadSegmentAuto,
   saveContentMetadata,
   isContentFullyDownloaded,
   deleteContentCache,
   getDownloadedContentIds,
   OfflineContentMetadata,
 } from '@/services/offlineStorage';
+import { NativeDownloader } from '@/plugins/NativeDownloaderPlugin';
 
 interface UseOfflineDownloadResult {
   downloadContent: (contentId: string, title: string, watermarkName?: string, watermarkEmail?: string) => Promise<void>;
@@ -32,6 +33,7 @@ export function useOfflineDownload(): UseOfflineDownloadResult {
   const cancelRef = useRef(false);
 
   const isNative = Capacitor.isNativePlatform();
+  const isAndroid = Capacitor.getPlatform() === 'android';
 
   const refreshDownloadedList = useCallback(async () => {
     if (!isNative) return;
@@ -82,6 +84,18 @@ export function useOfflineDownload(): UseOfflineDownloadResult {
         const totalSegments = segmentsData.length;
         const deviceId = await getDeviceId();
 
+        // Start foreground service for background download support (Android only)
+        if (isAndroid) {
+          try {
+            await NativeDownloader.startForegroundDownload({
+              title,
+              totalSegments,
+            });
+          } catch (e) {
+            console.warn('[OfflineDownload] Could not start foreground service:', e);
+          }
+        }
+
         // 2. For each segment, get signed URL and download
         const segmentMeta: OfflineContentMetadata['segments'] = [];
 
@@ -110,8 +124,8 @@ export function useOfflineDownload(): UseOfflineDownloadResult {
             throw new Error(urlData?.error || urlError?.message || 'Failed to get segment URL');
           }
 
-          // Download and save segment
-          await downloadSegment(contentId, seg.segment_index, urlData.signedUrl);
+          // Download and save segment (uses native HTTP on Android, fetch on web/iOS)
+          await downloadSegmentAuto(contentId, seg.segment_index, urlData.signedUrl);
 
           segmentMeta.push({
             index: seg.segment_index,
@@ -120,7 +134,21 @@ export function useOfflineDownload(): UseOfflineDownloadResult {
             fileName: `segment-${seg.segment_index}.pdf`,
           });
 
-          setDownloadProgress(Math.round(((i + 1) / totalSegments) * 100));
+          const overallProgress = Math.round(((i + 1) / totalSegments) * 100);
+          setDownloadProgress(overallProgress);
+
+          // Update foreground notification progress (Android only)
+          if (isAndroid) {
+            try {
+              await NativeDownloader.updateDownloadProgress({
+                currentSegment: i + 1,
+                totalSegments,
+                overallProgress,
+              });
+            } catch (e) {
+              // Non-fatal: notification update failed
+            }
+          }
         }
 
         if (!cancelRef.current) {
@@ -140,17 +168,41 @@ export function useOfflineDownload(): UseOfflineDownloadResult {
           // 4. Refresh list
           await refreshDownloadedList();
         }
+
+        // Stop foreground service with success notification (Android only)
+        if (isAndroid) {
+          try {
+            await NativeDownloader.stopForegroundDownload({
+              title,
+              success: !cancelRef.current,
+            });
+          } catch (e) {
+            console.warn('[OfflineDownload] Could not stop foreground service:', e);
+          }
+        }
       } catch (err) {
         console.error('[OfflineDownload] Error:', err);
         setDownloadError(err instanceof Error ? err.message : 'Download failed');
         // Clean up partial download on error
-        await deleteContentCache(contentId).catch(() => {});
+        await deleteContentCache(contentId).catch(() => { });
+
+        // Stop foreground service with failure notification (Android only)
+        if (isAndroid) {
+          try {
+            await NativeDownloader.stopForegroundDownload({
+              title,
+              success: false,
+            });
+          } catch (e) {
+            // Non-fatal
+          }
+        }
       } finally {
         setIsDownloading(false);
         setDownloadingContentId(null);
       }
     },
-    [isNative, isDownloading, refreshDownloadedList],
+    [isNative, isAndroid, isDownloading, refreshDownloadedList],
   );
 
   const removeDownload = useCallback(

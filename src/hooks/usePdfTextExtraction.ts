@@ -32,7 +32,7 @@ export function usePdfTextExtraction(pdfDocument: PDFDocument | null, enabled: b
         const numPages = pdfDocument.numPages;
         // Only analyze first 30 pages for performance
         const pagesToAnalyze = Math.min(numPages, 30);
-        
+
         // First pass: collect all text items with their font sizes
         const allFontSizes: number[] = [];
         const pageTextData: { pageNum: number; items: any[] }[] = [];
@@ -40,14 +40,14 @@ export function usePdfTextExtraction(pdfDocument: PDFDocument | null, enabled: b
         for (let i = 1; i <= pagesToAnalyze; i++) {
           const page = await pdfDocument.getPage(i);
           const textContent = await page.getTextContent();
-          
+
           const items = textContent.items.filter((item: any) => {
             // Filter out empty or whitespace-only text
             return item.str && item.str.trim().length > 0;
           });
 
           pageTextData.push({ pageNum: i, items });
-          
+
           for (const item of items) {
             if (item.transform && item.transform[0]) {
               const fontSize = Math.abs(item.transform[0]);
@@ -67,14 +67,14 @@ export function usePdfTextExtraction(pdfDocument: PDFDocument | null, enabled: b
         // Calculate font size statistics
         allFontSizes.sort((a, b) => a - b);
         const medianFontSize = allFontSizes[Math.floor(allFontSizes.length / 2)];
-        
+
         // Find unique large font sizes (potential heading sizes)
         const uniqueSizes = [...new Set(allFontSizes.filter(s => s > medianFontSize * 1.15))];
         uniqueSizes.sort((a, b) => b - a);
-        
+
         // Take top 3-4 largest font sizes as heading candidates
         const headingFontSizes = uniqueSizes.slice(0, 4);
-        
+
         if (headingFontSizes.length === 0) {
           setHeadings([]);
           setLoading(false);
@@ -89,18 +89,18 @@ export function usePdfTextExtraction(pdfDocument: PDFDocument | null, enabled: b
         for (const { pageNum, items } of pageTextData) {
           for (const item of items) {
             const fontSize = item.transform ? Math.abs(item.transform[0]) : 0;
-            
+
             if (fontSize >= minHeadingSize) {
               const title = item.str.trim();
-              
+
               // Skip if too short, all numbers, or already seen
               if (title.length < 3) continue;
               if (/^\d+$/.test(title)) continue;
               if (seenTitles.has(title.toLowerCase())) continue;
-              
+
               // Skip page numbers and common non-heading patterns
               if (/^(page|chapter|section|figure|table)\s*\d*$/i.test(title)) continue;
-              
+
               seenTitles.add(title.toLowerCase());
               allHeadings.push({
                 title,

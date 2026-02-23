@@ -21,7 +21,7 @@ export async function extractTableOfContents(
 ): Promise<ExtractedToc | null> {
   try {
     const pdf = await pdfjs.getDocument({ data: pdfBytes }).promise;
-    
+
     // Try bookmarks first
     const outline = await pdf.getOutline();
     if (outline && outline.length > 0) {
@@ -34,7 +34,7 @@ export async function extractTableOfContents(
         };
       }
     }
-    
+
     // Fall back to text-based extraction
     const headings = await extractHeadingsFromText(pdf);
     if (headings.length > 0) {
@@ -44,7 +44,7 @@ export async function extractTableOfContents(
         extractedAt: new Date().toISOString(),
       };
     }
-    
+
     return null;
   } catch (error) {
     console.error('[pdfTocExtractor] Error extracting TOC:', error);
@@ -62,20 +62,20 @@ async function processOutlineItems(
   items: any[]
 ): Promise<TocItem[]> {
   const processed: TocItem[] = [];
-  
+
   for (const item of items) {
     let pageNumber = 1;
-    
+
     // Get destination page
     if (item.dest) {
       try {
         let dest = item.dest;
-        
+
         // If dest is a string, resolve it
         if (typeof dest === 'string') {
           dest = await pdf.getDestination(dest);
         }
-        
+
         if (dest && Array.isArray(dest) && dest.length > 0) {
           const ref = dest[0];
           if (ref) {
@@ -104,7 +104,7 @@ async function processOutlineItems(
 
     processed.push(outlineItem);
   }
-  
+
   return processed;
 }
 
@@ -116,24 +116,24 @@ async function processOutlineItems(
 async function extractHeadingsFromText(pdf: any): Promise<TocItem[]> {
   const headings: TocItem[] = [];
   const numPages = pdf.numPages;
-  
+
   // Limit to first 100 pages for very large documents
   const maxPages = Math.min(numPages, 100);
-  
+
   interface TextItem {
     text: string;
     fontSize: number;
     pageNumber: number;
   }
-  
+
   const allText: TextItem[] = [];
-  
+
   // First pass: collect all text with font sizes
   for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
     try {
       const page = await pdf.getPage(pageNum);
       const textContent = await page.getTextContent();
-      
+
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       for (const item of textContent.items as any[]) {
         if (item.str && item.str.trim()) {
@@ -149,33 +149,33 @@ async function extractHeadingsFromText(pdf: any): Promise<TocItem[]> {
       console.warn(`[pdfTocExtractor] Error reading page ${pageNum}:`, err);
     }
   }
-  
+
   if (allText.length === 0) return [];
-  
+
   // Calculate font size statistics
   const fontSizes = allText.map(t => t.fontSize).sort((a, b) => a - b);
   const medianFontSize = fontSizes[Math.floor(fontSizes.length / 2)];
   const headingThreshold = medianFontSize * 1.2;
-  
+
   // Group text by page and find potential headings
   const seenHeadings = new Set<string>();
-  
+
   for (const item of allText) {
     if (item.fontSize >= headingThreshold) {
       const cleanText = item.text.trim();
-      
+
       // Skip if too short, too long, or already seen
       if (cleanText.length < 3 || cleanText.length > 100) continue;
-      
+
       // Skip common non-heading patterns
       if (/^\d+$/.test(cleanText)) continue; // Just numbers
       if (/^page\s+\d+$/i.test(cleanText)) continue; // Page numbers
       if (/^(chapter|section|part)\s*$/i.test(cleanText)) continue; // Incomplete headings
-      
+
       // Create a normalized key for deduplication
       const normalizedKey = `${item.pageNumber}-${cleanText.toLowerCase()}`;
       if (seenHeadings.has(normalizedKey)) continue;
-      
+
       seenHeadings.add(normalizedKey);
       headings.push({
         title: cleanText,
@@ -183,10 +183,10 @@ async function extractHeadingsFromText(pdf: any): Promise<TocItem[]> {
       });
     }
   }
-  
+
   // Sort by page number
   headings.sort((a, b) => a.pageNumber - b.pageNumber);
-  
+
   // Limit to 100 headings max
   return headings.slice(0, 100);
 }
