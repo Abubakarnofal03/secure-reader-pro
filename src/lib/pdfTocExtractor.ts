@@ -117,8 +117,8 @@ async function extractHeadingsFromText(pdf: any): Promise<TocItem[]> {
   const headings: TocItem[] = [];
   const numPages = pdf.numPages;
 
-  // Limit to first 100 pages for very large documents
-  const maxPages = Math.min(numPages, 100);
+  // Scan all pages (up to 500) for comprehensive TOC extraction
+  const maxPages = Math.min(numPages, 500);
 
   interface TextItem {
     text: string;
@@ -155,38 +155,71 @@ async function extractHeadingsFromText(pdf: any): Promise<TocItem[]> {
   // Calculate font size statistics
   const fontSizes = allText.map(t => t.fontSize).sort((a, b) => a - b);
   const medianFontSize = fontSizes[Math.floor(fontSizes.length / 2)];
-  const headingThreshold = medianFontSize * 1.2;
+
+  // Count frequency of each font size to find the body text size
+  const fontSizeFrequency = new Map<number, number>();
+  for (const item of allText) {
+    const rounded = Math.round(item.fontSize * 10) / 10;
+    fontSizeFrequency.set(rounded, (fontSizeFrequency.get(rounded) || 0) + 1);
+  }
+
+  // The most common font size is body text - headings must be significantly larger
+  let bodyFontSize = medianFontSize;
+  let maxFreq = 0;
+  for (const [size, freq] of fontSizeFrequency) {
+    if (freq > maxFreq) {
+      maxFreq = freq;
+      bodyFontSize = size;
+    }
+  }
+
+  // Require at least 30% larger than body text to be a heading
+  const headingThreshold = bodyFontSize * 1.3;
+
+  // Find distinct heading tiers (unique large sizes)
+  const uniqueLargeSizes = [...new Set(
+    allText.filter(t => t.fontSize >= headingThreshold).map(t => Math.round(t.fontSize * 10) / 10)
+  )].sort((a, b) => b - a);
+
+  // Only take top 3 tiers to avoid picking up slightly-bold body text
+  const headingTiers = new Set(uniqueLargeSizes.slice(0, 3));
+  if (headingTiers.size === 0) return [];
+
+  const minHeadingSize = Math.min(...headingTiers);
 
   // Group text by page and find potential headings
   const seenHeadings = new Set<string>();
 
   for (const item of allText) {
-    if (item.fontSize >= headingThreshold) {
-      const cleanText = item.text.trim();
+    const roundedSize = Math.round(item.fontSize * 10) / 10;
+    if (roundedSize < minHeadingSize) continue;
 
-      // Skip if too short, too long, or already seen
-      if (cleanText.length < 3 || cleanText.length > 100) continue;
+    const cleanText = item.text.trim();
 
-      // Skip common non-heading patterns
-      if (/^\d+$/.test(cleanText)) continue; // Just numbers
-      if (/^page\s+\d+$/i.test(cleanText)) continue; // Page numbers
-      if (/^(chapter|section|part)\s*$/i.test(cleanText)) continue; // Incomplete headings
+    // Skip if too short, too long, or already seen
+    if (cleanText.length < 3 || cleanText.length > 120) continue;
 
-      // Create a normalized key for deduplication
-      const normalizedKey = `${item.pageNumber}-${cleanText.toLowerCase()}`;
-      if (seenHeadings.has(normalizedKey)) continue;
+    // Skip common non-heading patterns
+    if (/^\d+$/.test(cleanText)) continue; // Just numbers
+    if (/^page\s+\d+$/i.test(cleanText)) continue; // Page numbers
+    if (/^(chapter|section|part)\s*$/i.test(cleanText)) continue; // Incomplete headings
+    if (/^\W+$/.test(cleanText)) continue; // Only punctuation/symbols
+    if (/^(www\.|http)/i.test(cleanText)) continue; // URLs
 
-      seenHeadings.add(normalizedKey);
-      headings.push({
-        title: cleanText,
-        pageNumber: item.pageNumber,
-      });
-    }
+    // Deduplicate by normalized text (across pages)
+    const normalizedText = cleanText.toLowerCase().replace(/\s+/g, ' ');
+    if (seenHeadings.has(normalizedText)) continue;
+
+    seenHeadings.add(normalizedText);
+    headings.push({
+      title: cleanText,
+      pageNumber: item.pageNumber,
+    });
   }
 
   // Sort by page number
   headings.sort((a, b) => a.pageNumber - b.pageNumber);
 
-  // Limit to 100 headings max
-  return headings.slice(0, 100);
+  // Limit to 150 headings max
+  return headings.slice(0, 150);
 }

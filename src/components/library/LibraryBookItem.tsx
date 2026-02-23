@@ -83,12 +83,13 @@ export function LibraryBookItem({
       {/* Water-fill download overlay */}
       {isThisDownloading && (
         <>
+          <div className="absolute inset-0 backdrop-blur-[2px] bg-background/30 z-[1] rounded-xl" />
           <div
-            className="absolute bottom-0 left-0 right-0 bg-primary/20 transition-all duration-300 ease-out rounded-b-xl"
+            className="absolute bottom-0 left-0 right-0 bg-primary/25 transition-all duration-300 ease-out rounded-b-xl z-[2]"
             style={{ height: `${downloadProgress}%` }}
           />
-          <div className="absolute inset-0 flex items-center justify-center z-10">
-            <span className="text-sm font-bold text-primary bg-background/80 px-3 py-1 rounded-full backdrop-blur-sm">
+          <div className="absolute inset-0 flex items-center justify-center z-[3]">
+            <span className="text-sm font-bold text-primary bg-background/80 px-3 py-1.5 rounded-full shadow-sm">
               {downloadProgress}%
             </span>
           </div>
