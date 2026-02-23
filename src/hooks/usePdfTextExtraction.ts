@@ -30,8 +30,8 @@ export function usePdfTextExtraction(pdfDocument: PDFDocument | null, enabled: b
       try {
         const allHeadings: ExtractedHeading[] = [];
         const numPages = pdfDocument.numPages;
-        // Only analyze first 30 pages for performance
-        const pagesToAnalyze = Math.min(numPages, 30);
+        // Analyze up to 200 pages for better TOC coverage
+        const pagesToAnalyze = Math.min(numPages, 200);
 
         // First pass: collect all text items with their font sizes
         const allFontSizes: number[] = [];
@@ -68,12 +68,24 @@ export function usePdfTextExtraction(pdfDocument: PDFDocument | null, enabled: b
         allFontSizes.sort((a, b) => a - b);
         const medianFontSize = allFontSizes[Math.floor(allFontSizes.length / 2)];
 
-        // Find unique large font sizes (potential heading sizes)
-        const uniqueSizes = [...new Set(allFontSizes.filter(s => s > medianFontSize * 1.15))];
+        // Find the most common font size (body text)
+        const fontSizeFreq = new Map<number, number>();
+        for (const s of allFontSizes) {
+          const rounded = Math.round(s * 10) / 10;
+          fontSizeFreq.set(rounded, (fontSizeFreq.get(rounded) || 0) + 1);
+        }
+        let bodyFontSize = medianFontSize;
+        let maxFreq = 0;
+        for (const [size, freq] of fontSizeFreq) {
+          if (freq > maxFreq) { maxFreq = freq; bodyFontSize = size; }
+        }
+
+        // Find unique large font sizes (must be 30%+ larger than body text)
+        const uniqueSizes = [...new Set(allFontSizes.filter(s => s > bodyFontSize * 1.3))];
         uniqueSizes.sort((a, b) => b - a);
 
-        // Take top 3-4 largest font sizes as heading candidates
-        const headingFontSizes = uniqueSizes.slice(0, 4);
+        // Take top 3 largest font size tiers as heading candidates
+        const headingFontSizes = uniqueSizes.slice(0, 3);
 
         if (headingFontSizes.length === 0) {
           setHeadings([]);
