@@ -117,8 +117,8 @@ async function extractHeadingsFromText(pdf: any): Promise<TocItem[]> {
   const headings: TocItem[] = [];
   const numPages = pdf.numPages;
 
-  // Scan all pages (up to 500) for comprehensive TOC extraction
-  const maxPages = Math.min(numPages, 500);
+  // Scan ALL pages for comprehensive TOC extraction during upload
+  const maxPages = numPages;
 
   interface TextItem {
     text: string;
