@@ -4,11 +4,12 @@ export interface TocItem {
   title: string;
   pageNumber: number;
   items?: TocItem[];
+  isManual?: boolean;
 }
 
 export interface ExtractedToc {
   items: TocItem[];
-  extractedFrom: 'bookmarks' | 'text';
+  extractedFrom: 'bookmarks' | 'text' | 'manual';
   extractedAt: string;
 }
 
@@ -66,22 +67,18 @@ async function processOutlineItems(
   for (const item of items) {
     let pageNumber = 1;
 
-    // Get destination page
     if (item.dest) {
       try {
         let dest = item.dest;
-
-        // If dest is a string, resolve it
         if (typeof dest === 'string') {
           dest = await pdf.getDestination(dest);
         }
-
         if (dest && Array.isArray(dest) && dest.length > 0) {
           const ref = dest[0];
           if (ref) {
             try {
               const pageIndex = await pdf.getPageIndex(ref);
-              pageNumber = pageIndex + 1; // Convert to 1-based
+              pageNumber = pageIndex + 1;
             } catch {
               console.warn('[pdfTocExtractor] Could not get page index for:', item.title);
             }
@@ -97,7 +94,6 @@ async function processOutlineItems(
       pageNumber,
     };
 
-    // Process nested items
     if (item.items && item.items.length > 0) {
       outlineItem.items = await processOutlineItems(pdf, item.items);
     }
@@ -110,26 +106,23 @@ async function processOutlineItems(
 
 /**
  * Extract headings from PDF text content by analyzing font sizes.
- * Scans all pages for better accuracy during upload.
+ * Scans all pages. Merges adjacent text fragments on the same line.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function extractHeadingsFromText(pdf: any): Promise<TocItem[]> {
-  const headings: TocItem[] = [];
   const numPages = pdf.numPages;
 
-  // Scan ALL pages for comprehensive TOC extraction during upload
-  const maxPages = numPages;
-
-  interface TextItem {
+  interface RawTextItem {
     text: string;
     fontSize: number;
     pageNumber: number;
+    y: number; // vertical position for line merging
   }
 
-  const allText: TextItem[] = [];
+  const allText: RawTextItem[] = [];
 
-  // First pass: collect all text with font sizes
-  for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
+  // First pass: collect all text with font sizes and positions
+  for (let pageNum = 1; pageNum <= numPages; pageNum++) {
     try {
       const page = await pdf.getPage(pageNum);
       const textContent = await page.getTextContent();
@@ -138,10 +131,12 @@ async function extractHeadingsFromText(pdf: any): Promise<TocItem[]> {
       for (const item of textContent.items as any[]) {
         if (item.str && item.str.trim()) {
           const fontSize = Math.abs(item.transform?.[0] || item.height || 12);
+          const y = item.transform?.[5] || 0;
           allText.push({
             text: item.str.trim(),
             fontSize,
             pageNumber: pageNum,
+            y: Math.round(y),
           });
         }
       }
@@ -152,19 +147,30 @@ async function extractHeadingsFromText(pdf: any): Promise<TocItem[]> {
 
   if (allText.length === 0) return [];
 
-  // Calculate font size statistics
-  const fontSizes = allText.map(t => t.fontSize).sort((a, b) => a - b);
-  const medianFontSize = fontSizes[Math.floor(fontSizes.length / 2)];
-
-  // Count frequency of each font size to find the body text size
-  const fontSizeFrequency = new Map<number, number>();
+  // Merge adjacent text fragments that share the same page, font size (±0.5), and Y position (±2)
+  const merged: RawTextItem[] = [];
   for (const item of allText) {
+    const last = merged[merged.length - 1];
+    if (
+      last &&
+      last.pageNumber === item.pageNumber &&
+      Math.abs(last.fontSize - item.fontSize) < 0.5 &&
+      Math.abs(last.y - item.y) < 3
+    ) {
+      last.text += ' ' + item.text;
+    } else {
+      merged.push({ ...item });
+    }
+  }
+
+  // Count frequency of each font size to find body text size
+  const fontSizeFrequency = new Map<number, number>();
+  for (const item of merged) {
     const rounded = Math.round(item.fontSize * 10) / 10;
     fontSizeFrequency.set(rounded, (fontSizeFrequency.get(rounded) || 0) + 1);
   }
 
-  // The most common font size is body text - headings must be significantly larger
-  let bodyFontSize = medianFontSize;
+  let bodyFontSize = 12;
   let maxFreq = 0;
   for (const [size, freq] of fontSizeFrequency) {
     if (freq > maxFreq) {
@@ -173,40 +179,40 @@ async function extractHeadingsFromText(pdf: any): Promise<TocItem[]> {
     }
   }
 
-  // Require at least 30% larger than body text to be a heading
-  const headingThreshold = bodyFontSize * 1.3;
+  // Headings must be at least 15% larger than body text (relaxed from 30%)
+  const headingThreshold = bodyFontSize * 1.15;
 
-  // Find distinct heading tiers (unique large sizes)
+  // Find distinct heading tiers
   const uniqueLargeSizes = [...new Set(
-    allText.filter(t => t.fontSize >= headingThreshold).map(t => Math.round(t.fontSize * 10) / 10)
+    merged.filter(t => t.fontSize >= headingThreshold).map(t => Math.round(t.fontSize * 10) / 10)
   )].sort((a, b) => b - a);
 
-  // Only take top 3 tiers to avoid picking up slightly-bold body text
-  const headingTiers = new Set(uniqueLargeSizes.slice(0, 3));
+  // Take top 5 tiers (relaxed from 3)
+  const headingTiers = new Set(uniqueLargeSizes.slice(0, 5));
   if (headingTiers.size === 0) return [];
 
   const minHeadingSize = Math.min(...headingTiers);
 
-  // Group text by page and find potential headings
+  // Extract headings
+  const headings: TocItem[] = [];
   const seenHeadings = new Set<string>();
 
-  for (const item of allText) {
+  for (const item of merged) {
     const roundedSize = Math.round(item.fontSize * 10) / 10;
     if (roundedSize < minHeadingSize) continue;
 
     const cleanText = item.text.trim();
 
-    // Skip if too short, too long, or already seen
-    if (cleanText.length < 3 || cleanText.length > 120) continue;
+    // Skip too short, too long
+    if (cleanText.length < 3 || cleanText.length > 150) continue;
 
     // Skip common non-heading patterns
-    if (/^\d+$/.test(cleanText)) continue; // Just numbers
-    if (/^page\s+\d+$/i.test(cleanText)) continue; // Page numbers
-    if (/^(chapter|section|part)\s*$/i.test(cleanText)) continue; // Incomplete headings
-    if (/^\W+$/.test(cleanText)) continue; // Only punctuation/symbols
-    if (/^(www\.|http)/i.test(cleanText)) continue; // URLs
+    if (/^\d+$/.test(cleanText)) continue;
+    if (/^page\s+\d+$/i.test(cleanText)) continue;
+    if (/^\W+$/.test(cleanText)) continue;
+    if (/^(www\.|http)/i.test(cleanText)) continue;
 
-    // Deduplicate by normalized text (across pages)
+    // Deduplicate
     const normalizedText = cleanText.toLowerCase().replace(/\s+/g, ' ');
     if (seenHeadings.has(normalizedText)) continue;
 
@@ -217,9 +223,6 @@ async function extractHeadingsFromText(pdf: any): Promise<TocItem[]> {
     });
   }
 
-  // Sort by page number
   headings.sort((a, b) => a.pageNumber - b.pageNumber);
-
-  // Limit to 150 headings max
-  return headings.slice(0, 150);
+  return headings.slice(0, 300);
 }
