@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { ToggleLeft, ToggleRight, Trash2, Users, Loader2, RefreshCw, ImagePlus } from 'lucide-react';
+import { ToggleLeft, ToggleRight, Trash2, Users, Loader2, RefreshCw, ImagePlus, BookOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
@@ -15,6 +15,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { BookCover } from '@/components/library/BookCover';
 import { formatPrice } from '@/lib/currency';
+import { TocEditor } from '@/components/admin/TocEditor';
 
 interface Content {
   id: string;
@@ -42,6 +43,8 @@ export function ContentList({ onManageAccess, refreshTrigger }: ContentListProps
   const [replacing, setReplacing] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [replaceContentId, setReplaceContentId] = useState<string | null>(null);
+  const [tocContentId, setTocContentId] = useState<string | null>(null);
+  const [tocContentTitle, setTocContentTitle] = useState('');
 
   useEffect(() => {
     fetchContents();
@@ -325,6 +328,15 @@ export function ContentList({ onManageAccess, refreshTrigger }: ContentListProps
               <Button
                 variant="ghost"
                 size="sm"
+                onClick={() => { setTocContentId(content.id); setTocContentTitle(content.title); }}
+                title="Edit Table of Contents"
+                className="h-9 px-3"
+              >
+                <BookOpen className="h-4 w-4 mr-1.5" />
+                <span className="text-xs">TOC</span>
+              </Button>
+              <Button
+                size="sm"
                 onClick={() => handleReplaceClick(content.id)}
                 disabled={replacing === content.id}
                 title="Replace file"
@@ -384,6 +396,12 @@ export function ContentList({ onManageAccess, refreshTrigger }: ContentListProps
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <TocEditor
+        contentId={tocContentId}
+        contentTitle={tocContentTitle}
+        onClose={() => { setTocContentId(null); setTocContentTitle(''); }}
+      />
     </>
   );
 }
