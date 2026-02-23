@@ -493,14 +493,40 @@ export function VirtualizedPdfViewer({
   });
 
   // Expose scroll API for external navigation (jump to page, resume reading)
+  // Uses a retry mechanism because the virtualizer's size estimates for unrendered
+  // pages are inaccurate, causing large jumps to undershoot. We scroll, wait for
+  // the virtualizer to measure real DOM, then scroll again until we arrive.
   const scrollToPage = useCallback((page: number, smooth: boolean = true) => {
-    const pageIndex = page - 1; // Convert 1-based page to 0-based index
-    if (pageIndex >= 0 && pageIndex < numPages) {
-      virtualizer.scrollToIndex(pageIndex, { 
+    const pageIndex = page - 1;
+    if (pageIndex < 0 || pageIndex >= numPages) return;
+
+    let attempts = 0;
+    const maxAttempts = 15;
+
+    const doScroll = () => {
+      virtualizer.scrollToIndex(pageIndex, {
         align: 'start',
-        behavior: smooth ? 'smooth' : 'auto',
+        // Use instant jumps for retries to avoid slow cascading animations
+        behavior: attempts === 0 && smooth ? 'smooth' : 'auto',
       });
-    }
+
+      attempts++;
+      if (attempts >= maxAttempts) return;
+
+      // After each scroll, check if the target item is actually visible.
+      // If not, the virtualizer has re-measured and we can try again.
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          const items = virtualizer.getVirtualItems();
+          const targetVisible = items.some(item => item.index === pageIndex);
+          if (!targetVisible) {
+            doScroll();
+          }
+        }, 50);
+      });
+    };
+
+    doScroll();
   }, [virtualizer, numPages]);
 
   // Call onReady when component is ready with the scroll API
