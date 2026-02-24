@@ -185,6 +185,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
+    let loadingResolved = false;
+    const resolveLoading = () => {
+      if (!loadingResolved) {
+        loadingResolved = true;
+        setLoading(false);
+      }
+    };
+
+    // Safety timeout: if auth takes too long (slow internet), fall back to cached state
+    // This prevents the blank white screen on slow connections
+    const AUTH_TIMEOUT_MS = 5000;
+    const timeoutId = setTimeout(async () => {
+      if (!loadingResolved) {
+        console.log('[Auth] Timeout reached — falling back to cached state');
+        const cached = await loadCachedLoginState();
+        if (cached) {
+          console.log('[Auth] Restoring cached login (slow network fallback)');
+          setUser(cached.user);
+          setSession(cached.session);
+          setProfile(cached.profile);
+        }
+        resolveLoading();
+      }
+    }, AUTH_TIMEOUT_MS);
+
     // Set up auth state listener first
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, currentSession) => {
@@ -204,13 +229,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }, 0);
         } else {
           // Only clear profile if we're not in a pending device conflict state
-          // This prevents wiping the state during the conflict resolution flow
           if (!pendingDeviceConflict) {
             setProfile(null);
           }
         }
 
-        setLoading(false);
+        resolveLoading();
       }
     );
 
@@ -225,7 +249,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             await persistLoginState(currentSession.user, currentSession, profileData);
             validateSession(profileData);
           }
-          setLoading(false);
+          resolveLoading();
         });
       } else {
         // No Supabase session — try to restore from local cache (offline/token expired)
@@ -249,11 +273,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             });
           }
         }
-        setLoading(false);
+        resolveLoading();
       }
+    }).catch(async (err) => {
+      // Network error on getSession — fall back to cache
+      console.warn('[Auth] getSession failed (likely slow/no network):', err);
+      const cached = await loadCachedLoginState();
+      if (cached) {
+        console.log('[Auth] Restoring cached login after getSession failure');
+        setUser(cached.user);
+        setSession(cached.session);
+        setProfile(cached.profile);
+      }
+      resolveLoading();
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      clearTimeout(timeoutId);
+      subscription.unsubscribe();
+    };
   }, [pendingDeviceConflict]);
 
   const signUp = async (email: string, password: string, name: string) => {
