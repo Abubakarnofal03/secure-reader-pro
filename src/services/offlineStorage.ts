@@ -25,6 +25,8 @@ export interface OfflineContentMetadata {
     userName: string;
     userEmail: string;
   };
+  /** Stored table of contents for offline access */
+  tableOfContents?: unknown;
 }
 
 function isNative(): boolean {

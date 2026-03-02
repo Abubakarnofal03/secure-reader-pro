@@ -59,7 +59,7 @@ export function useAutoCache({
 
         const { data: contentData } = await supabase
           .from('content')
-          .select('total_pages, title')
+          .select('total_pages, title, table_of_contents')
           .eq('id', contentId)
           .single();
 
@@ -131,6 +131,7 @@ export function useAutoCache({
           watermark: watermarkName
             ? { userName: watermarkName, userEmail: watermarkEmail || '' }
             : undefined,
+          tableOfContents: contentData?.table_of_contents || undefined,
         });
 
         cachedRef.current = true;

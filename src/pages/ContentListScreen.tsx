@@ -59,7 +59,10 @@ export default function ContentListScreen() {
   const mainRef = useRef<HTMLDivElement>(null);
   const startY = useRef(0);
   const isPulling = useRef(false);
-  const [isOffline, setIsOffline] = useState(!navigator.onLine);
+  const [isOffline, setIsOffline] = useState(() => {
+    const { isEffectivelyOffline } = require('@/lib/networkQuality');
+    return isEffectivelyOffline();
+  });
   const { isFirstAppOpen, markAppOpened } = useFirstTimeFlags();
   const [showAppTutorial, setShowAppTutorial] = useState(false);
 
@@ -132,9 +135,10 @@ export default function ContentListScreen() {
       setIsRefreshing(true);
     }
 
-    // If offline, load from cache
-    if (!navigator.onLine) {
-      console.log('[Library] Offline — loading cached library data');
+    // If offline or poor network, load from cache immediately
+    const { isEffectivelyOffline } = await import('@/lib/networkQuality');
+    if (isEffectivelyOffline()) {
+      console.log('[Library] Offline/poor network — loading cached library data');
       const cached = await loadCachedLibrary();
       if (cached) {
         setContent(cached.content);
@@ -143,6 +147,7 @@ export default function ContentListScreen() {
       }
       setLoading(false);
       setIsRefreshing(false);
+      setIsOffline(true);
       return;
     }
 
@@ -211,19 +216,30 @@ export default function ContentListScreen() {
     setIsRefreshing(false);
   }, [user, cacheLibraryData, loadCachedLibrary]);
 
-  // Track online/offline status
+  // Track online/offline status (including poor network)
   useEffect(() => {
+    const { onNetworkQualityChange } = require('@/lib/networkQuality');
     const goOnline = () => {
       setIsOffline(false);
-      fetchContent(); // Refresh when coming back online
+      fetchContent(); // Refresh when connection becomes good
     };
     const goOffline = () => {
       setIsOffline(true);
-      setActiveTab('my-books'); // Auto-switch to library when offline
+      setActiveTab('my-books');
     };
+
+    const unsub = onNetworkQualityChange((quality: string) => {
+      if (quality === 'good') {
+        goOnline();
+      } else {
+        goOffline();
+      }
+    });
+
     window.addEventListener('online', goOnline);
     window.addEventListener('offline', goOffline);
     return () => {
+      unsub();
       window.removeEventListener('online', goOnline);
       window.removeEventListener('offline', goOffline);
     };

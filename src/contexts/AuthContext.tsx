@@ -186,6 +186,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let loadingResolved = false;
+    let cacheRestored = false;
+
     const resolveLoading = () => {
       if (!loadingResolved) {
         loadingResolved = true;
@@ -193,42 +195,66 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     };
 
-    // Safety timeout: if auth takes too long (slow internet), fall back to cached state
-    // This prevents the blank white screen on slow connections
-    const AUTH_TIMEOUT_MS = 5000;
-    const timeoutId = setTimeout(async () => {
+    // Step 1: Immediately hydrate from local cache (instant, no network)
+    // This ensures the user never sees a blank screen regardless of network.
+    const hydrateFromCache = async () => {
+      const cached = await loadCachedLoginState();
+      if (cached && !loadingResolved) {
+        console.log('[Auth] Instant hydration from local cache');
+        setUser(cached.user);
+        setSession(cached.session);
+        setProfile(cached.profile);
+        cacheRestored = true;
+      }
+    };
+
+    // Start cache hydration immediately (non-blocking)
+    const cachePromise = hydrateFromCache();
+
+    // Step 2: Determine if we should even wait for remote auth
+    const { isEffectivelyOffline } = require('@/lib/networkQuality');
+    const poorNetwork = isEffectivelyOffline();
+
+    if (poorNetwork) {
+      // Poor/offline network: resolve loading as soon as cache is hydrated
+      cachePromise.then(() => {
+        console.log('[Auth] Poor network detected — using cached session immediately');
+        resolveLoading();
+      });
+    }
+
+    // Safety timeout (only matters on "good" network that turns out slow)
+    const AUTH_TIMEOUT_MS = 3000;
+    const timeoutId = setTimeout(() => {
       if (!loadingResolved) {
-        console.log('[Auth] Timeout reached — falling back to cached state');
-        const cached = await loadCachedLoginState();
-        if (cached) {
-          console.log('[Auth] Restoring cached login (slow network fallback)');
-          setUser(cached.user);
-          setSession(cached.session);
-          setProfile(cached.profile);
-        }
+        console.log('[Auth] Timeout reached — resolving with whatever state we have');
         resolveLoading();
       }
     }, AUTH_TIMEOUT_MS);
 
-    // Set up auth state listener first
+    // Set up auth state listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, currentSession) => {
+        // On poor network, don't let a null session event wipe cache-restored state
+        if (!currentSession && cacheRestored && isEffectivelyOffline()) {
+          console.log('[Auth] Ignoring null session event on poor network (cache preserved)');
+          resolveLoading();
+          return;
+        }
+
         setSession(currentSession);
         setUser(currentSession?.user ?? null);
 
         if (currentSession?.user) {
-          // Use setTimeout to avoid potential race condition
           setTimeout(async () => {
             const profileData = await fetchProfile(currentSession.user.id);
             if (profileData) {
               setProfile(profileData);
-              // Persist login state for offline resilience
               await persistLoginState(currentSession.user, currentSession, profileData);
               await validateSession(profileData);
             }
           }, 0);
         } else {
-          // Only clear profile if we're not in a pending device conflict state
           if (!pendingDeviceConflict) {
             setProfile(null);
           }
@@ -238,55 +264,54 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     );
 
-    // Then check for existing session
-    supabase.auth.getSession().then(async ({ data: { session: currentSession } }) => {
-      if (currentSession?.user) {
-        setSession(currentSession);
-        setUser(currentSession.user);
-        fetchProfile(currentSession.user.id).then(async (profileData) => {
-          if (profileData) {
-            setProfile(profileData);
-            await persistLoginState(currentSession.user, currentSession, profileData);
-            validateSession(profileData);
+    // Only attempt remote session check if network seems usable
+    if (!poorNetwork) {
+      supabase.auth.getSession().then(async ({ data: { session: currentSession } }) => {
+        if (currentSession?.user) {
+          setSession(currentSession);
+          setUser(currentSession.user);
+          fetchProfile(currentSession.user.id).then(async (profileData) => {
+            if (profileData) {
+              setProfile(profileData);
+              await persistLoginState(currentSession.user, currentSession, profileData);
+              validateSession(profileData);
+            }
+            resolveLoading();
+          });
+        } else {
+          // No remote session — cache was already hydrated above
+          if (!cacheRestored) {
+            // Try cache one more time (race condition safety)
+            const cached = await loadCachedLoginState();
+            if (cached) {
+              setUser(cached.user);
+              setSession(cached.session);
+              setProfile(cached.profile);
+            }
           }
-          resolveLoading();
-        });
-      } else {
-        // No Supabase session — try to restore from local cache (offline/token expired)
-        const cached = await loadCachedLoginState();
-        if (cached) {
-          console.log('[Auth] No active session but found cached login — restoring');
-          setUser(cached.user);
-          setSession(cached.session);
-          setProfile(cached.profile);
-          // Try to refresh in background if online
-          if (navigator.onLine) {
+          // Background refresh if online
+          if (cacheRestored && navigator.onLine) {
             supabase.auth.refreshSession().then(({ data }) => {
               if (data.session) {
                 console.log('[Auth] Background token refresh successful');
                 setSession(data.session);
                 setUser(data.session.user);
-                persistLoginState(data.session.user, data.session, cached.profile);
+                loadCachedLoginState().then(cached => {
+                  if (cached) persistLoginState(data.session!.user, data.session!, cached.profile);
+                });
               }
             }).catch(() => {
               console.log('[Auth] Background refresh failed — staying with cached state');
             });
           }
+          resolveLoading();
         }
+      }).catch(async (err) => {
+        console.warn('[Auth] getSession failed:', err);
+        // Cache was already hydrated above, just resolve
         resolveLoading();
-      }
-    }).catch(async (err) => {
-      // Network error on getSession — fall back to cache
-      console.warn('[Auth] getSession failed (likely slow/no network):', err);
-      const cached = await loadCachedLoginState();
-      if (cached) {
-        console.log('[Auth] Restoring cached login after getSession failure');
-        setUser(cached.user);
-        setSession(cached.session);
-        setProfile(cached.profile);
-      }
-      resolveLoading();
-    });
+      });
+    }
 
     return () => {
       clearTimeout(timeoutId);
