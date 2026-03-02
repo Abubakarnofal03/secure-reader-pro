@@ -2,6 +2,7 @@ import { useEffect, useCallback, useRef } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { isNetworkGood } from '@/lib/networkQuality';
 import { toast } from 'sonner';
 import {
   getDownloadedContentIds,
@@ -24,7 +25,6 @@ export function useOfflineAccessSync() {
     if (!navigator.onLine) return;
 
     // Skip revocation checks on poor network — defer to stable connection
-    const { isNetworkGood } = await import('@/lib/networkQuality');
     if (!isNetworkGood()) {
       console.log('[OfflineSync] Skipping sync — network quality is poor');
       return;

@@ -3,6 +3,7 @@ import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { getDeviceId, clearDeviceId } from '@/lib/device';
 import { storage } from '@/lib/storage';
+import { isEffectivelyOffline } from '@/lib/networkQuality';
 
 const CACHED_PROFILE_KEY = 'secure_reader_cached_profile';
 const LOGIN_FLAG_KEY = 'secure_reader_logged_in';
@@ -212,7 +213,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const cachePromise = hydrateFromCache();
 
     // Step 2: Determine if we should even wait for remote auth
-    const { isEffectivelyOffline } = require('@/lib/networkQuality');
     const poorNetwork = isEffectivelyOffline();
 
     if (poorNetwork) {
