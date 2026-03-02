@@ -1,93 +1,84 @@
 
+I’ll implement this as an offline-first reliability fix for low-bandwidth conditions, so the app behaves like offline mode when the connection is too weak.
 
-# Size-Gated Downloads and Persistent Offline Storage
+### What I found
+- Auth currently waits up to 5s before using cached session, so users sit on login then get redirected.
+- Library/reader treat “online but very slow” as fully online, so they wait on backend calls instead of using downloaded/local data.
+- Downloaded book opening still performs online access and metadata fetches before rendering.
+- Revocation sync runs on any `navigator.onLine=true`, even on unstable networks.
 
-## Overview
-Large PDFs (100-200MB) are extremely slow to render on-the-fly via signed URLs. This plan introduces a size threshold: small PDFs can be read directly (download optional), but large PDFs must be downloaded first. Downloads persist across logouts so users never re-download. The download UI uses a "water filling" animation over the publication cell.
+### Implementation plan
 
-## Changes
+1) Add a **network quality gate** (low-bandwidth detection)
+- Create a shared utility (new file) that classifies connection as:
+  - `offline`
+  - `poor` (forced offline behavior)
+  - `good`
+- Use browser connection hints when available (`effectiveType`, `downlink`, `rtt`, `saveData`) plus request-timeout fallback for platforms where hints are missing.
+- Add a small helper to wrap backend reads with timeout so slow links degrade quickly.
 
-### 1. Database: Add `file_size` column to `content` table
-- Add a nullable `bigint` column `file_size` to `public.content` (stores bytes)
-- Populated during upload from `selectedFile.size`
+2) Make auth startup **instant from local session**
+- Update `src/contexts/AuthContext.tsx`:
+  - Hydrate cached user/session/profile immediately on app boot (before waiting for remote session checks).
+  - If network is poor, resolve auth loading immediately from cache (no 5s wait).
+  - Keep remote session/profile validation in background; never block first paint on weak links.
+  - Prevent weak-network null-session events from wiping already-restored cached auth state.
 
-### 2. Admin Upload: Store file size
-**File:** `src/components/admin/ContentUpload.tsx`
-- In the `handleUpload` function, add `file_size: selectedFile.size` to the insert call
+3) Make library screen **stale-while-revalidate**
+- Update `src/pages/ContentListScreen.tsx`:
+  - On poor network, load cached library + downloaded flags immediately and render.
+  - Run backend refresh only when connection is good (or with strict timeout); otherwise keep local snapshot.
+  - Treat poor network same as offline for Store/Updates tab gating to avoid hanging requests.
 
-### 3. Content List: Fetch file size and enforce download gate
-**File:** `src/pages/ContentListScreen.tsx`
-- Add `file_size` to the content query `select()`
-- Define a threshold constant: `SIZE_THRESHOLD = 30 * 1024 * 1024` (30MB)
-- When a user taps a large, non-downloaded publication, show a toast or dialog saying "This publication is too large to stream. Please download it first for the best experience." and trigger the download instead of navigating to the reader
-- Small publications navigate directly as today
+4) Make downloaded reader flow **fully local-first**
+- Update `src/pages/SecureReaderScreen.tsx`:
+  - If book is downloaded, open from local metadata/files first, regardless of weak online state.
+  - Skip blocking backend access/segment metadata calls on poor connections.
+  - Only attempt online validation in background when connection is good.
+  - Remove hard `window.location.reload()` after gated download completion; switch to local state re-init to avoid extra network/startup delays.
 
-### 4. Water-fill download animation on the publication cell
-**File:** `src/components/library/LibraryBookItem.tsx`
-- When `isThisDownloading` is true, render an overlay inside the entire card with:
-  - A semi-transparent primary-colored div that animates from `height: 0%` to `height: 100%` (bottom to top), driven by `downloadProgress`
-  - A percentage label centered on the card
-  - The existing content remains visible underneath (slightly dimmed)
-- Remove the separate `DownloadButton` progress ring -- the cell itself IS the progress indicator during download
+5) Run permission revocation checks **only on stable network**
+- Update `src/hooks/useOfflineAccessSync.ts`:
+  - Skip access-revocation sync when connection is poor.
+  - Add query timeout and retry-on-next-stable-network behavior.
+  - Keep revocation enforcement intact, but only when network quality is good (as requested).
 
-**File:** `src/components/library/DownloadButton.tsx`
-- Simplify: when downloading, return `null` (the cell handles the visual). Keep the download/checkmark/remove states as-is.
+6) Ensure TOC for downloaded books is available **without online reads**
+- Update offline metadata pipeline:
+  - `src/services/offlineStorage.ts` metadata type to include optional TOC payload.
+  - `src/hooks/useOfflineDownload.ts` and `src/hooks/useAutoCache.ts` store TOC in local metadata at download/cache time.
+  - `src/pages/SecureReaderScreen.tsx` load TOC from local metadata when reading downloaded content.
+- This removes TOC dependency on backend reads for downloaded books.
 
-### 5. Persist downloads across logout
-**File:** `src/hooks/useOfflineAccessSync.ts`
-- Currently deletes caches when access is revoked. This stays.
-- No change needed -- downloads already use Capacitor Filesystem which persists across app sessions.
-
-**File:** `src/contexts/AuthContext.tsx`
-- On sign-out, do NOT call any offline cache deletion. Downloads survive logout.
-- On login, call `refreshDownloadedList()` so previously downloaded content shows as available.
-
-**File:** `src/hooks/useOfflineDownload.ts`
-- No changes to download logic. Already persists to device filesystem.
-
-### 6. Reader: Block large non-downloaded content
-**File:** `src/pages/SecureReaderScreen.tsx`
-- After fetching content metadata, if `file_size > SIZE_THRESHOLD` and content is NOT downloaded locally, show a full-screen message: "This publication is large and needs to be downloaded first for the best reading experience" with a download button and progress indicator (water-fill style)
-- Once download completes, auto-proceed to reader
-- Small publications load as today (no gate)
-
-### 7. ContentItem interface update
-- Add `file_size: number | null` to the `ContentItem` interface in `ContentListScreen.tsx`
-
-## Technical Details
-
-### Size threshold
-- Constant: `const LARGE_PDF_THRESHOLD_MB = 30`
-- Stored in one shared location (e.g., a constants file or inline)
-
-### Water-fill animation CSS
+### Expected behavior after fix
 ```text
-The overlay div uses:
-- position: absolute, bottom: 0, left: 0, right: 0
-- height transitions from 0% to downloadProgress%
-- background: primary color at 25% opacity
-- transition: height 300ms ease
-- rounded corners match the card
+App launch on weak internet
+  -> cached session restored immediately
+  -> user goes straight to library/dashboard
+  -> background validation only if connection improves
+
+Open downloaded publication on weak internet
+  -> load local metadata + local segments immediately
+  -> no blocking backend fetches
+  -> revocation check deferred to stable connection
 ```
 
-### Download persistence across logout
-- Capacitor Filesystem writes to `Directory.Data` which is app-private and survives across sessions
-- The `offlineStorage.ts` service already handles this correctly
-- On login, `useOfflineDownload` runs `refreshDownloadedList()` on mount, which scans the filesystem -- so previously downloaded content appears immediately
+### Technical details
+- No database schema/RLS changes needed.
+- No auth policy changes needed.
+- Main files to update:
+  - `src/contexts/AuthContext.tsx`
+  - `src/pages/ContentListScreen.tsx`
+  - `src/pages/SecureReaderScreen.tsx`
+  - `src/hooks/useOfflineAccessSync.ts`
+  - `src/hooks/useOfflineDownload.ts`
+  - `src/hooks/useAutoCache.ts`
+  - `src/services/offlineStorage.ts`
+  - new shared network-quality utility file (e.g. `src/lib/networkQuality.ts`)
 
-### Migration SQL
-```sql
-ALTER TABLE public.content ADD COLUMN file_size bigint;
-```
-
-## Files Summary
-
-| Action | File |
-|--------|------|
-| MIGRATE | Add `file_size` column to `content` table |
-| EDIT | `src/components/admin/ContentUpload.tsx` (save file_size on upload) |
-| EDIT | `src/pages/ContentListScreen.tsx` (fetch file_size, gate large PDFs) |
-| EDIT | `src/components/library/LibraryBookItem.tsx` (water-fill download overlay) |
-| EDIT | `src/components/library/DownloadButton.tsx` (hide progress ring during download) |
-| EDIT | `src/pages/SecureReaderScreen.tsx` (block large non-downloaded PDFs with download prompt) |
-
+### Validation checklist I will run after implementation
+- Slow network simulation: app should not pause on login for 5s before redirect.
+- Launch with cached session + poor network: immediate entry to dashboard/library.
+- Open downloaded book on poor network: fast render from local files, no long spinner.
+- Verify TOC is visible for downloaded content without requiring network.
+- Verify revocation still works when network becomes stable.
