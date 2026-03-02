@@ -35,6 +35,7 @@ import { isContentFullyDownloaded, getContentMetadata } from '@/services/offline
 import { useFirstTimeFlags } from '@/hooks/useFirstTimeFlags';
 import { OnboardingTutorial } from '@/components/OnboardingTutorial';
 import { useAutoCache } from '@/hooks/useAutoCache';
+import { isEffectivelyOffline } from '@/lib/networkQuality';
 import { ExtractedToc } from '@/lib/pdfTocExtractor';
 import { HIGHLIGHT_COLORS } from '@/hooks/useUserHighlights';
 
@@ -399,9 +400,7 @@ export default function SecureReaderScreen() {
         }
 
         // If offline or poor network, check local download first — skip blocking backend call
-        const { isEffectivelyOffline } = await import('@/lib/networkQuality');
         const downloaded = await isContentFullyDownloaded(id);
-
         if (isEffectivelyOffline()) {
           if (downloaded) {
             console.log('[SecureReader] Poor/offline network: granting access to downloaded content');
@@ -494,10 +493,9 @@ export default function SecureReaderScreen() {
         setLoadingProgress(10);
 
         // Check if content is downloaded locally — use it on poor/offline network
-        const { isEffectivelyOffline: checkOffline } = await import('@/lib/networkQuality');
         const offlineMeta = await getContentMetadata(id);
 
-        if (offlineMeta && (checkOffline() || !navigator.onLine)) {
+        if (offlineMeta && (isEffectivelyOffline() || !navigator.onLine)) {
           console.log('[SecureReader] Poor/offline network: using local content metadata');
           setIsLegacyContent(false);
           setLoadingProgress(50);
@@ -529,7 +527,7 @@ export default function SecureReaderScreen() {
           return;
         }
 
-        if (!navigator.onLine || checkOffline()) {
+        if (!navigator.onLine || isEffectivelyOffline()) {
           setError('You are offline and this content is not available locally.');
           setLoading(false);
           return;

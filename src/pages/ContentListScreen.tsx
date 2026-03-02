@@ -15,6 +15,7 @@ import { useOfflineDownload } from '@/hooks/useOfflineDownload';
 import { useFirstTimeFlags } from '@/hooks/useFirstTimeFlags';
 import { OnboardingTutorial } from '@/components/OnboardingTutorial';
 import logo from '@/assets/logo.png';
+import { isEffectivelyOffline as checkEffectivelyOffline, onNetworkQualityChange } from '@/lib/networkQuality';
 
 // Lazy load HighlightsSection to prevent unnecessary network requests on app start
 const HighlightsSection = lazy(() => import('@/components/highlights/HighlightsSection'));
@@ -59,10 +60,7 @@ export default function ContentListScreen() {
   const mainRef = useRef<HTMLDivElement>(null);
   const startY = useRef(0);
   const isPulling = useRef(false);
-  const [isOffline, setIsOffline] = useState(() => {
-    const { isEffectivelyOffline } = require('@/lib/networkQuality');
-    return isEffectivelyOffline();
-  });
+  const [isOffline, setIsOffline] = useState(() => checkEffectivelyOffline());
   const { isFirstAppOpen, markAppOpened } = useFirstTimeFlags();
   const [showAppTutorial, setShowAppTutorial] = useState(false);
 
@@ -136,8 +134,7 @@ export default function ContentListScreen() {
     }
 
     // If offline or poor network, load from cache immediately
-    const { isEffectivelyOffline } = await import('@/lib/networkQuality');
-    if (isEffectivelyOffline()) {
+    if (checkEffectivelyOffline()) {
       console.log('[Library] Offline/poor network — loading cached library data');
       const cached = await loadCachedLibrary();
       if (cached) {
@@ -218,7 +215,6 @@ export default function ContentListScreen() {
 
   // Track online/offline status (including poor network)
   useEffect(() => {
-    const { onNetworkQualityChange } = require('@/lib/networkQuality');
     const goOnline = () => {
       setIsOffline(false);
       fetchContent(); // Refresh when connection becomes good
