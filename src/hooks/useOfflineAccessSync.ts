@@ -23,6 +23,13 @@ export function useOfflineAccessSync() {
     if (!isNative || !user || isRunning.current) return;
     if (!navigator.onLine) return;
 
+    // Skip revocation checks on poor network — defer to stable connection
+    const { isNetworkGood } = await import('@/lib/networkQuality');
+    if (!isNetworkGood()) {
+      console.log('[OfflineSync] Skipping sync — network quality is poor');
+      return;
+    }
+
     isRunning.current = true;
 
     try {

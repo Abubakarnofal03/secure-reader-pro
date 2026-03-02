@@ -398,20 +398,43 @@ export default function SecureReaderScreen() {
           return;
         }
 
-        // If offline, check if content is downloaded locally
-        if (!navigator.onLine) {
-          const downloaded = await isContentFullyDownloaded(id);
+        // If offline or poor network, check local download first — skip blocking backend call
+        const { isEffectivelyOffline } = await import('@/lib/networkQuality');
+        const downloaded = await isContentFullyDownloaded(id);
+
+        if (isEffectivelyOffline()) {
           if (downloaded) {
-            console.log('[SecureReader] Offline: granting access to downloaded content');
+            console.log('[SecureReader] Poor/offline network: granting access to downloaded content');
             setHasAccess(true);
             setCheckingAccess(false);
             return;
           }
-          // Offline and not downloaded — can't verify access
           setError('You are offline. This content is not available offline.');
           setHasAccess(false);
           setCheckingAccess(false);
           setLoading(false);
+          return;
+        }
+
+        // Good network — check if downloaded first for fast path
+        if (downloaded) {
+          console.log('[SecureReader] Content is downloaded, granting access (will validate in background)');
+          setHasAccess(true);
+          setCheckingAccess(false);
+          // Background validation — don't block reader
+          Promise.resolve(
+            supabase
+              .from('user_content_access')
+              .select('id')
+              .eq('user_id', profile.id)
+              .eq('content_id', id)
+              .maybeSingle()
+          ).then(({ data: access }) => {
+              if (!access) {
+                console.warn('[SecureReader] Background check: access revoked');
+              }
+            })
+            .catch(() => { /* non-blocking */ });
           return;
         }
 
@@ -424,14 +447,6 @@ export default function SecureReaderScreen() {
 
         if (accessError) {
           console.error('Error checking access:', accessError);
-          // If access check fails (possibly offline/network issue), check local download
-          const downloaded = await isContentFullyDownloaded(id);
-          if (downloaded) {
-            console.log('[SecureReader] Network error but content is downloaded, granting access');
-            setHasAccess(true);
-            setCheckingAccess(false);
-            return;
-          }
           setError('Failed to verify content access');
           setCheckingAccess(false);
           return;
@@ -449,7 +464,6 @@ export default function SecureReaderScreen() {
         setCheckingAccess(false);
       } catch (err) {
         console.error('Access check error:', err);
-        // Last resort: check if downloaded locally
         const downloaded = await isContentFullyDownloaded(id);
         if (downloaded) {
           console.log('[SecureReader] Exception during access check but content downloaded, granting access');
@@ -479,35 +493,43 @@ export default function SecureReaderScreen() {
       try {
         setLoadingProgress(10);
 
-        // If offline, try to use locally downloaded content
-        if (!navigator.onLine) {
-          const offlineMeta = await getContentMetadata(id);
-          if (offlineMeta) {
-            console.log('[SecureReader] Offline: using downloaded content metadata');
-            setIsLegacyContent(false);
-            setLoadingProgress(50);
+        // Check if content is downloaded locally — use it on poor/offline network
+        const { isEffectivelyOffline: checkOffline } = await import('@/lib/networkQuality');
+        const offlineMeta = await getContentMetadata(id);
 
-            setContent({
-              title: offlineMeta.title,
-              signedUrl: '', // Will use offline segment URLs
-              expiresAt: 0,
-              watermark: {
-                userName: offlineMeta.watermark?.userName || profile?.name || 'User',
-                userEmail: offlineMeta.watermark?.userEmail || profile?.email || '',
-                timestamp: new Date().toISOString(),
-                sessionId: crypto.randomUUID().substring(0, 8),
-              },
-            });
+        if (offlineMeta && (checkOffline() || !navigator.onLine)) {
+          console.log('[SecureReader] Poor/offline network: using local content metadata');
+          setIsLegacyContent(false);
+          setLoadingProgress(50);
 
-            if (offlineMeta.totalPages) {
-              setNumPages(offlineMeta.totalPages);
-            }
+          setContent({
+            title: offlineMeta.title,
+            signedUrl: '',
+            expiresAt: 0,
+            watermark: {
+              userName: offlineMeta.watermark?.userName || profile?.name || 'User',
+              userEmail: offlineMeta.watermark?.userEmail || profile?.email || '',
+              timestamp: new Date().toISOString(),
+              sessionId: crypto.randomUUID().substring(0, 8),
+            },
+          });
 
-            setLoadingProgress(100);
-            setLoading(false);
-            return;
+          if (offlineMeta.totalPages) {
+            setNumPages(offlineMeta.totalPages);
           }
 
+          // Use stored TOC from local metadata if available
+          if (offlineMeta.tableOfContents) {
+            console.log('[SecureReader] Using TOC from local metadata');
+            setStoredToc(offlineMeta.tableOfContents as unknown as ExtractedToc);
+          }
+
+          setLoadingProgress(100);
+          setLoading(false);
+          return;
+        }
+
+        if (!navigator.onLine || checkOffline()) {
           setError('You are offline and this content is not available locally.');
           setLoading(false);
           return;

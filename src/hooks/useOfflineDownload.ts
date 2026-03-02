@@ -74,10 +74,10 @@ export function useOfflineDownload(): UseOfflineDownloadResult {
           throw new Error('No segments found for this content');
         }
 
-        // Fetch total pages
+        // Fetch total pages and TOC
         const { data: contentData } = await supabase
           .from('content')
-          .select('total_pages')
+          .select('total_pages, table_of_contents')
           .eq('id', contentId)
           .single();
 
@@ -163,6 +163,7 @@ export function useOfflineDownload(): UseOfflineDownloadResult {
             watermark: watermarkName
               ? { userName: watermarkName, userEmail: watermarkEmail || '' }
               : undefined,
+            tableOfContents: contentData?.table_of_contents || undefined,
           });
 
           // 4. Refresh list
