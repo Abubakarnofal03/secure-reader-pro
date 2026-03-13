@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { ToggleLeft, ToggleRight, Trash2, Users, Loader2, RefreshCw, ImagePlus, BookOpen } from 'lucide-react';
+import { ToggleLeft, ToggleRight, Trash2, Users, Loader2, RefreshCw, ImagePlus, BookOpen, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
@@ -16,6 +16,7 @@ import { useToast } from '@/hooks/use-toast';
 import { BookCover } from '@/components/library/BookCover';
 import { formatPrice } from '@/lib/currency';
 import { TocEditor } from '@/components/admin/TocEditor';
+import { ContentEditDialog } from '@/components/admin/ContentEditDialog';
 
 interface Content {
   id: string;
@@ -45,6 +46,7 @@ export function ContentList({ onManageAccess, refreshTrigger }: ContentListProps
   const [replaceContentId, setReplaceContentId] = useState<string | null>(null);
   const [tocContentId, setTocContentId] = useState<string | null>(null);
   const [tocContentTitle, setTocContentTitle] = useState('');
+  const [editContent, setEditContent] = useState<Content | null>(null);
 
   useEffect(() => {
     fetchContents();
@@ -318,6 +320,16 @@ export function ContentList({ onManageAccess, refreshTrigger }: ContentListProps
               <Button
                 variant="ghost"
                 size="sm"
+                onClick={() => setEditContent(content)}
+                title="Edit publication"
+                className="h-9 px-3"
+              >
+                <Pencil className="h-4 w-4 mr-1.5" />
+                <span className="text-xs">Edit</span>
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => onManageAccess(content)}
                 title="Manage user access"
                 className="h-9 px-3"
@@ -401,6 +413,12 @@ export function ContentList({ onManageAccess, refreshTrigger }: ContentListProps
         contentId={tocContentId}
         contentTitle={tocContentTitle}
         onClose={() => { setTocContentId(null); setTocContentTitle(''); }}
+      />
+
+      <ContentEditDialog
+        content={editContent}
+        onClose={() => setEditContent(null)}
+        onSaved={fetchContents}
       />
     </>
   );
