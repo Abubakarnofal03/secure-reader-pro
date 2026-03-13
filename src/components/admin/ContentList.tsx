@@ -16,6 +16,7 @@ import { useToast } from '@/hooks/use-toast';
 import { BookCover } from '@/components/library/BookCover';
 import { formatPrice } from '@/lib/currency';
 import { TocEditor } from '@/components/admin/TocEditor';
+import { ContentEditDialog } from '@/components/admin/ContentEditDialog';
 
 interface Content {
   id: string;
