@@ -46,6 +46,7 @@ export function ContentList({ onManageAccess, refreshTrigger }: ContentListProps
   const [replaceContentId, setReplaceContentId] = useState<string | null>(null);
   const [tocContentId, setTocContentId] = useState<string | null>(null);
   const [tocContentTitle, setTocContentTitle] = useState('');
+  const [editContent, setEditContent] = useState<Content | null>(null);
 
   useEffect(() => {
     fetchContents();

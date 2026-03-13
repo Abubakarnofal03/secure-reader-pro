@@ -24,7 +24,7 @@ export function useReadingProgress({
   const [isLoading, setIsLoading] = useState(true);
   const [showResumePrompt, setShowResumePrompt] = useState(false);
   
-  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedPageRef = useRef<number>(1);
   const isMountedRef = useRef(true);
 
