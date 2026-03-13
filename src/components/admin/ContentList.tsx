@@ -414,6 +414,12 @@ export function ContentList({ onManageAccess, refreshTrigger }: ContentListProps
         contentTitle={tocContentTitle}
         onClose={() => { setTocContentId(null); setTocContentTitle(''); }}
       />
+
+      <ContentEditDialog
+        content={editContent}
+        onClose={() => setEditContent(null)}
+        onSaved={fetchContents}
+      />
     </>
   );
 }
