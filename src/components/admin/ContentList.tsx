@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { ToggleLeft, ToggleRight, Trash2, Users, Loader2, RefreshCw, ImagePlus, BookOpen } from 'lucide-react';
+import { ToggleLeft, ToggleRight, Trash2, Users, Loader2, RefreshCw, ImagePlus, BookOpen, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
