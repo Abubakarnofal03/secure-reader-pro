@@ -320,6 +320,16 @@ export function ContentList({ onManageAccess, refreshTrigger }: ContentListProps
               <Button
                 variant="ghost"
                 size="sm"
+                onClick={() => setEditContent(content)}
+                title="Edit publication"
+                className="h-9 px-3"
+              >
+                <Pencil className="h-4 w-4 mr-1.5" />
+                <span className="text-xs">Edit</span>
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => onManageAccess(content)}
                 title="Manage user access"
                 className="h-9 px-3"
