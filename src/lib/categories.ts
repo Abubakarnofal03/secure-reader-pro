@@ -12,6 +12,7 @@ import {
   Syringe,
   Thermometer,
   BookOpen,
+  Apple,
   type LucideIcon
 } from 'lucide-react';
 
