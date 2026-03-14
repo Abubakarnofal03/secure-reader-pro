@@ -316,15 +316,15 @@ export function ContentList({ onManageAccess, refreshTrigger }: ContentListProps
             </div>
 
             {/* Action buttons in a separate row on mobile */}
-            <div className="flex items-center justify-end gap-1 mt-3 pt-3 border-t border-border/50">
+            <div className="flex items-center justify-end gap-1 mt-3 pt-3 border-t border-border/50 flex-wrap">
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => setEditContent(content)}
                 title="Edit publication"
-                className="h-9 px-3"
+                className="h-8 px-2"
               >
-                <Pencil className="h-4 w-4 mr-1.5" />
+                <Pencil className="h-3.5 w-3.5 mr-1" />
                 <span className="text-xs">Edit</span>
               </Button>
               <Button
@@ -332,9 +332,9 @@ export function ContentList({ onManageAccess, refreshTrigger }: ContentListProps
                 size="sm"
                 onClick={() => onManageAccess(content)}
                 title="Manage user access"
-                className="h-9 px-3"
+                className="h-8 px-2"
               >
-                <Users className="h-4 w-4 mr-1.5" />
+                <Users className="h-3.5 w-3.5 mr-1" />
                 <span className="text-xs">Access</span>
               </Button>
               <Button
@@ -342,9 +342,9 @@ export function ContentList({ onManageAccess, refreshTrigger }: ContentListProps
                 size="sm"
                 onClick={() => { setTocContentId(content.id); setTocContentTitle(content.title); }}
                 title="Edit Table of Contents"
-                className="h-9 px-3"
+                className="h-8 px-2"
               >
-                <BookOpen className="h-4 w-4 mr-1.5" />
+                <BookOpen className="h-3.5 w-3.5 mr-1" />
                 <span className="text-xs">TOC</span>
               </Button>
               <Button
@@ -352,12 +352,12 @@ export function ContentList({ onManageAccess, refreshTrigger }: ContentListProps
                 onClick={() => handleReplaceClick(content.id)}
                 disabled={replacing === content.id}
                 title="Replace file"
-                className="h-9 px-3"
+                className="h-8 px-2"
               >
                 {replacing === content.id ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 ) : (
-                  <RefreshCw className="h-4 w-4" />
+                  <RefreshCw className="h-3.5 w-3.5" />
                 )}
               </Button>
               <Button
@@ -365,12 +365,12 @@ export function ContentList({ onManageAccess, refreshTrigger }: ContentListProps
                 size="sm"
                 onClick={() => toggleActive(content)}
                 title={content.is_active ? 'Deactivate' : 'Activate'}
-                className="h-9 px-3"
+                className="h-8 px-2"
               >
                 {content.is_active ? (
-                  <ToggleRight className="h-5 w-5 text-success" />
+                  <ToggleRight className="h-4 w-4 text-success" />
                 ) : (
-                  <ToggleLeft className="h-5 w-5" />
+                  <ToggleLeft className="h-4 w-4" />
                 )}
               </Button>
               <Button
@@ -378,9 +378,9 @@ export function ContentList({ onManageAccess, refreshTrigger }: ContentListProps
                 size="sm"
                 onClick={() => setDeleteContent(content)}
                 title="Delete content"
-                className="h-9 px-3"
+                className="h-8 px-2"
               >
-                <Trash2 className="h-4 w-4 text-destructive" />
+                <Trash2 className="h-3.5 w-3.5 text-destructive" />
               </Button>
             </div>
           </div>
