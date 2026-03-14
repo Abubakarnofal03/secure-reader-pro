@@ -37,6 +37,7 @@ export const CONTENT_CATEGORIES: CategoryConfig[] = [
   { id: 'surgery', label: 'Surgery', icon: Syringe, color: 'text-slate-500' },
   { id: 'internal-medicine', label: 'Internal Medicine', icon: Stethoscope, color: 'text-teal-500' },
   { id: 'diagnostics', label: 'Diagnostics', icon: Thermometer, color: 'text-yellow-500' },
+  { id: 'nutrition', label: 'Nutrition', icon: Apple, color: 'text-lime-500' },
 ];
 
 export function getCategoryConfig(categoryId: string): CategoryConfig {
